@@ -1,9 +1,15 @@
 import { createRoot } from "react-dom/client";
-import App from "./App";
-import { RouterProvider, createBrowserRouter } from "react-router-dom";
+import {
+  Navigate,
+  RouterProvider,
+  createBrowserRouter,
+} from "react-router-dom";
 import MainLayout from "./components/layout/MainLayout";
 import loader from "./lib/loader";
 import ErrorPage from "./pages/ErrorPage";
+import CustomersPage from "./pages/CustomersPage";
+import ProductsPage from "./pages/ProductsPage";
+
 const router = createBrowserRouter([
   {
     id: "root",
@@ -14,7 +20,15 @@ const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <App />,
+        element: <Navigate to="/customers" replace />,
+      },
+      {
+        path: "/customers",
+        element: <CustomersPage />,
+      },
+      {
+        path: "/products",
+        element: <ProductsPage />,
       },
     ],
   },
