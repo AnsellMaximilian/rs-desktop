@@ -1,4 +1,4 @@
-import { Pool } from "pg";
+import type { Pool } from "pg";
 
 let pool: Pool | null = null;
 
@@ -7,7 +7,12 @@ const connectionString =
   process.env.POSTGRES_URL ||
   process.env.POSTGRES_CONNECTION_STRING;
 
-function getPool() {
+async function loadPoolCtor() {
+  const mod = await import("pg");
+  return mod.Pool;
+}
+
+async function getPool() {
   if (!connectionString) {
     throw new Error(
       "DATABASE_URL is not set. Provide a Postgres connection string to enable database access."
@@ -15,7 +20,8 @@ function getPool() {
   }
 
   if (!pool) {
-    pool = new Pool({
+    const PoolCtor = await loadPoolCtor();
+    pool = new PoolCtor({
       connectionString,
       max: 5,
       idleTimeoutMillis: 30_000,
@@ -26,7 +32,7 @@ function getPool() {
 }
 
 export async function pingDatabase() {
-  const client = await getPool().connect();
+  const client = await (await getPool()).connect();
   try {
     const { rows } = await client.query(
       "select now() as now, current_database() as database"
