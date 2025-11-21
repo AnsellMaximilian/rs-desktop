@@ -34,6 +34,7 @@
     "@typescript-eslint/parser": "^5.62.0",
     "electron": "38.1.2",
     "eslint": "^8.57.1",
+    "eslint-import-resolver-typescript": "^3.6.3",
     "eslint-plugin-import": "^2.32.0",
     "shadcn": "^3.5.0",
     "typescript": "^5.9.2",
