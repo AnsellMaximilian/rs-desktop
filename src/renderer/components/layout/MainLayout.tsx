@@ -73,10 +73,10 @@ export default function MainLayout() {
             </SidebarGroup>
           </SidebarContent>
         </Sidebar>
-        <SidebarInset className="bg-slate-950 text-white">
-          <header className="flex h-14 items-center gap-3 border-b border-white/10 bg-slate-900/60 px-4 backdrop-blur">
+        <SidebarInset className="bg-background text-foreground">
+          <header className="flex h-14 items-center gap-3 border-b border-border/70 bg-card px-4">
             <SidebarTrigger />
-            <div className="text-sm font-semibold tracking-wide text-emerald-100">
+            <div className="text-sm font-semibold tracking-wide">
               Inventory
             </div>
           </header>
