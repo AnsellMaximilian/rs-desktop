@@ -2,6 +2,7 @@ import { app, BrowserWindow } from "electron";
 import path from "node:path";
 import started from "electron-squirrel-startup";
 import initHandlers from "./main/handlers";
+import { closePool } from "./main/db";
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -46,6 +47,12 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
   }
+});
+
+app.on("before-quit", () => {
+  void closePool().catch((err) => {
+    console.error("Failed to close database pool:", err);
+  });
 });
 
 app.on("activate", () => {

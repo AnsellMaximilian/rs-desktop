@@ -20,9 +20,11 @@ export const CHANNELS = {
     "WRITE_FILE",
   ] as const),
   AUTH: makeChannels("auth", ["LOGIN", "LOGOUT", "ME"] as const),
+  DATABASE: makeChannels("database", ["PING"] as const),
 } as const;
 
 // Types
 export type Channel =
   | (typeof CHANNELS.FILES)[keyof typeof CHANNELS.FILES]
-  | (typeof CHANNELS.AUTH)[keyof typeof CHANNELS.AUTH];
+  | (typeof CHANNELS.AUTH)[keyof typeof CHANNELS.AUTH]
+  | (typeof CHANNELS.DATABASE)[keyof typeof CHANNELS.DATABASE];

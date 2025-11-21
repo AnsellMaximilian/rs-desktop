@@ -1,5 +1,6 @@
 import { dialog, ipcMain } from "electron";
 import { CHANNELS } from "../../shared/channels";
+import { pingDatabase } from "../db";
 
 const initHandlers = () => {
   ipcMain.handle(CHANNELS.FILES.PICK_FOLDER, async () => {
@@ -9,6 +10,11 @@ const initHandlers = () => {
     if (res.canceled) return null;
 
     return res.filePaths[0];
+  });
+
+  ipcMain.handle(CHANNELS.DATABASE.PING, async () => {
+    const result = await pingDatabase();
+    return result;
   });
 };
 

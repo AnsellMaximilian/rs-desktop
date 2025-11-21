@@ -14,6 +14,9 @@ const api: AppAPI = {
   files: {
     pickFolder: () => ipcRenderer.invoke(CHANNELS.FILES.PICK_FOLDER),
   },
+  database: {
+    ping: () => ipcRenderer.invoke(CHANNELS.DATABASE.PING),
+  },
 };
 
 contextBridge.exposeInMainWorld("api", api);

@@ -1,7 +1,14 @@
 import { useMemo, useState } from "react";
 
+type DatabaseStatus =
+  | { state: "idle" }
+  | { state: "loading" }
+  | { state: "success"; message: string; detail?: string }
+  | { state: "error"; message: string };
+
 export default function App() {
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+  const [dbStatus, setDbStatus] = useState<DatabaseStatus>({ state: "idle" });
 
   const recents = useMemo(
     () => [
@@ -44,8 +51,26 @@ export default function App() {
 
   const pickFolder = async () => {
     const result = await api.files.pickFolder();
-    if (result?.path) {
-      setSelectedFolder(result.path);
+    if (result) {
+      setSelectedFolder(result);
+    }
+  };
+
+  const testDbConnection = async () => {
+    setDbStatus({ state: "loading" });
+    try {
+      const result = await api.database.ping();
+      setDbStatus({
+        state: "success",
+        message: `Connected to ${result.database ?? "database"}`,
+        detail: `Server time: ${new Date(result.now).toLocaleString()}`,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not reach the database.";
+      setDbStatus({ state: "error", message });
     }
   };
 
@@ -74,11 +99,46 @@ export default function App() {
             <button className="rounded-lg border border-white/15 px-4 py-3 text-slate-100/90 transition duration-150 hover:border-emerald-200/70 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-200">
               Browse templates
             </button>
+            <button
+              onClick={testDbConnection}
+              className="rounded-lg border border-emerald-200/60 bg-emerald-500/10 px-4 py-3 text-emerald-100 transition duration-150 hover:-translate-y-0.5 hover:border-emerald-100 hover:bg-emerald-500/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-200 active:translate-y-0"
+            >
+              Test database connection
+            </button>
             {selectedFolder ? (
               <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-sm text-emerald-100">
                 Selected: {selectedFolder}
               </span>
             ) : null}
+          </div>
+
+          <div className="mt-4 flex min-h-[42px] items-center gap-3 text-sm">
+            {dbStatus.state === "loading" && (
+              <span className="rounded-full border border-emerald-300/40 bg-emerald-500/10 px-3 py-1 text-emerald-100">
+                Pinging Postgres...
+              </span>
+            )}
+            {dbStatus.state === "success" && (
+              <>
+                <span className="rounded-full border border-emerald-300/40 bg-emerald-500/15 px-3 py-1 text-emerald-50">
+                  {dbStatus.message}
+                </span>
+                {dbStatus.detail ? (
+                  <span className="text-emerald-100/80">{dbStatus.detail}</span>
+                ) : null}
+              </>
+            )}
+            {dbStatus.state === "error" && (
+              <span className="rounded-full border border-rose-200/40 bg-rose-500/15 px-3 py-1 text-rose-100">
+                {dbStatus.message}
+              </span>
+            )}
+            {dbStatus.state === "idle" && (
+              <span className="text-slate-200/70">
+                Set `DATABASE_URL` and click test to verify your local Postgres
+                connection.
+              </span>
+            )}
           </div>
 
           <div className="mt-8 grid gap-4 sm:grid-cols-3">
