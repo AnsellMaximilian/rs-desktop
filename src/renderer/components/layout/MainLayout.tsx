@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { Package, Users } from "lucide-react";
+import { Home, Package, Users } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -17,6 +17,7 @@ import {
 import { cn } from "@/lib/utils";
 
 const navItems = [
+  { label: "Home", icon: Home, to: "/home" },
   { label: "Customers", icon: Users, to: "/customers" },
   { label: "Products", icon: Package, to: "/products" },
 ];

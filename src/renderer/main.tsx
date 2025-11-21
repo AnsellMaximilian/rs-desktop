@@ -7,6 +7,7 @@ import {
 import MainLayout from "./components/layout/MainLayout";
 import loader from "./lib/loader";
 import ErrorPage from "./pages/ErrorPage";
+import HomePage from "./pages/HomePage";
 import CustomersPage from "./pages/CustomersPage";
 import ProductsPage from "./pages/ProductsPage";
 
@@ -20,7 +21,11 @@ const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <Navigate to="/customers" replace />,
+        element: <Navigate to="/home" replace />,
+      },
+      {
+        path: "/home",
+        element: <HomePage />,
       },
       {
         path: "/customers",
