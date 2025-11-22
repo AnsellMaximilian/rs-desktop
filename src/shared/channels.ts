@@ -21,10 +21,12 @@ export const CHANNELS = {
   ] as const),
   AUTH: makeChannels("auth", ["LOGIN", "LOGOUT", "ME"] as const),
   DATABASE: makeChannels("database", ["PING"] as const),
+  CUSTOMERS: makeChannels("customers", ["LIST"] as const),
 } as const;
 
 // Types
 export type Channel =
   | (typeof CHANNELS.FILES)[keyof typeof CHANNELS.FILES]
   | (typeof CHANNELS.AUTH)[keyof typeof CHANNELS.AUTH]
-  | (typeof CHANNELS.DATABASE)[keyof typeof CHANNELS.DATABASE];
+  | (typeof CHANNELS.DATABASE)[keyof typeof CHANNELS.DATABASE]
+  | (typeof CHANNELS.CUSTOMERS)[keyof typeof CHANNELS.CUSTOMERS];

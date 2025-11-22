@@ -17,6 +17,9 @@ const api: AppAPI = {
   database: {
     ping: () => ipcRenderer.invoke(CHANNELS.DATABASE.PING),
   },
+  customers: {
+    list: (input) => ipcRenderer.invoke(CHANNELS.CUSTOMERS.LIST, input),
+  },
 };
 
 contextBridge.exposeInMainWorld("api", api);
