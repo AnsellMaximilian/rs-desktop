@@ -10,6 +10,7 @@ import type {
   ProductsSortKey,
   ProductsOverview,
   TopItem,
+  TrendPoint,
 } from "../shared/types";
 
 let pool: Pool | null = null;
@@ -301,20 +302,120 @@ export async function getCustomerDetail(id: number): Promise<CustomerDetail> {
     WHERE "CustomerId" = $1
   `;
 
-  const purchaseQuery = `
-    SELECT COUNT(*)::int AS count, MAX("createdAt") AS "lastDate"
-    FROM "PurchaseDetails"
-    WHERE "CustomerId" = $1
+  const invoiceTrendQuery = `
+    WITH series AS (
+      SELECT date_trunc('month', CURRENT_DATE) - (interval '1 month' * generate_series(0, 5)) AS month
+    )
+    SELECT
+      to_char(series.month, 'Mon YYYY') AS label,
+      COALESCE(COUNT(i.*), 0)::int AS count
+    FROM series
+    LEFT JOIN "Invoices" i
+      ON i."CustomerId" = $1
+      AND date_trunc('month', i.date) = series.month
+    GROUP BY series.month
+    ORDER BY series.month;
+  `;
+
+  const deliveryTrendQuery = `
+    WITH series AS (
+      SELECT date_trunc('month', CURRENT_DATE) - (interval '1 month' * generate_series(0, 5)) AS month
+    )
+    SELECT
+      to_char(series.month, 'Mon YYYY') AS label,
+      COALESCE(COUNT(d.*), 0)::int AS count
+    FROM series
+    LEFT JOIN "Deliveries" d
+      ON d."CustomerId" = $1
+      AND date_trunc('month', d.date) = series.month
+    GROUP BY series.month
+    ORDER BY series.month;
+  `;
+
+  const spendTrendQuery = `
+    WITH series AS (
+      SELECT date_trunc('month', CURRENT_DATE) - (interval '1 month' * generate_series(0, 5)) AS month
+    )
+    SELECT
+      to_char(series.month, 'Mon YYYY') AS label,
+      COALESCE(SUM(dd.price * dd.qty), 0)::numeric AS amount
+    FROM series
+    LEFT JOIN "Deliveries" d
+      ON d."CustomerId" = $1
+      AND date_trunc('month', d.date) = series.month
+    LEFT JOIN "DeliveryDetails" dd ON dd."DeliveryId" = d.id
+    GROUP BY series.month
+    ORDER BY series.month;
+  `;
+
+  const categoryBreakdownQuery = `
+    SELECT
+      COALESCE(pc."name", 'Uncategorized') AS label,
+      COALESCE(SUM(dd.price * dd.qty), 0)::numeric AS amount
+    FROM "Deliveries" d
+    JOIN "DeliveryDetails" dd ON dd."DeliveryId" = d.id
+    LEFT JOIN "Products" p ON dd."ProductId" = p.id
+    LEFT JOIN "ProductCategories" pc ON p."ProductCategoryId" = pc.id
+    WHERE d."CustomerId" = $1
+    GROUP BY pc."name"
+    ORDER BY amount DESC, label ASC
+    LIMIT 6
+  `;
+
+  const orderBucketsQuery = `
+    WITH order_totals AS (
+      SELECT
+        d.id,
+        COALESCE(SUM(dd.price * dd.qty), 0)::numeric AS total
+      FROM "Deliveries" d
+      LEFT JOIN "DeliveryDetails" dd ON dd."DeliveryId" = d.id
+      WHERE d."CustomerId" = $1
+      GROUP BY d.id
+    )
+    , bucketized AS (
+      SELECT
+        CASE
+          WHEN total < 100000 THEN '< 100k'
+          WHEN total < 500000 THEN '100k - 500k'
+          WHEN total < 1000000 THEN '500k - 1M'
+          ELSE '> 1M'
+        END AS label
+      FROM order_totals
+    )
+    SELECT
+      label,
+      COUNT(*)::int AS count
+    FROM bucketized
+    GROUP BY label
+    ORDER BY
+      CASE
+        WHEN label = '< 100k' THEN 1
+        WHEN label = '100k - 500k' THEN 2
+        WHEN label = '500k - 1M' THEN 3
+        ELSE 4
+      END;
   `;
 
   try {
-    const [customerResult, invoiceResult, deliveryResult, purchaseResult] =
-      await Promise.all([
-        client.query(customerQuery, [id]),
-        client.query(invoiceQuery, [id]),
-        client.query(deliveryQuery, [id]),
-        client.query(purchaseQuery, [id]),
-      ]);
+    const [
+      customerResult,
+      invoiceResult,
+      deliveryResult,
+      invoiceTrendResult,
+      deliveryTrendResult,
+      spendTrendResult,
+      categoryBreakdownResult,
+      orderBucketsResult,
+    ] = await Promise.all([
+      client.query(customerQuery, [id]),
+      client.query(invoiceQuery, [id]),
+      client.query(deliveryQuery, [id]),
+      client.query(invoiceTrendQuery, [id]),
+      client.query(deliveryTrendQuery, [id]),
+      client.query(spendTrendQuery, [id]),
+      client.query(categoryBreakdownQuery, [id]),
+      client.query(orderBucketsQuery, [id]),
+    ]);
 
     if (customerResult.rows.length === 0) {
       throw new Error("Customer not found");
@@ -347,16 +448,12 @@ export async function getCustomerDetail(id: number): Promise<CustomerDetail> {
 
     const inv = invoiceResult.rows[0] ?? {};
     const del = deliveryResult.rows[0] ?? {};
-    const pur = purchaseResult.rows[0] ?? {};
 
     const lastInvoiceDate =
       inv.lastDate instanceof Date ? inv.lastDate.toISOString() : inv.lastDate ?? null;
     const lastDeliveryDate =
       del.lastDate instanceof Date ? del.lastDate.toISOString() : del.lastDate ?? null;
-    const lastPurchaseDate =
-      pur.lastDate instanceof Date ? pur.lastDate.toISOString() : pur.lastDate ?? null;
-
-    const lastActivityDate = [lastInvoiceDate, lastDeliveryDate, lastPurchaseDate]
+    const lastActivityDate = [lastInvoiceDate, lastDeliveryDate]
       .filter(Boolean)
       .map((d) => new Date(d as string).getTime())
       .reduce<number | null>((max, ts) => {
@@ -364,15 +461,55 @@ export async function getCustomerDetail(id: number): Promise<CustomerDetail> {
         return max === null ? ts : Math.max(max, ts);
       }, null);
 
+    const invoiceTrend: TrendPoint[] = invoiceTrendResult.rows.map((row) => ({
+      label: row.label,
+      count: Number(row.count ?? 0),
+    }));
+    const deliveryTrend: TrendPoint[] = deliveryTrendResult.rows.map((row) => ({
+      label: row.label,
+      count: Number(row.count ?? 0),
+    }));
+    const spendTrend: TrendAmountPoint[] = spendTrendResult.rows.map((row) => ({
+      label: row.label,
+      amount: Number(row.amount ?? 0),
+    }));
+    const categoryBreakdown: CategorySlice[] = categoryBreakdownResult.rows.map(
+      (row) => ({
+        label: row.label ?? "Uncategorized",
+        amount: Number(row.amount ?? 0),
+      })
+    );
+    const orderValueBuckets: BucketSlice[] = orderBucketsResult.rows.map(
+      (row) => ({
+        label: row.label,
+        count: Number(row.count ?? 0),
+      })
+    );
+
+    const monetary = spendTrend.reduce((sum, item) => sum + item.amount, 0);
+    const recencyDays = lastDeliveryDate
+      ? Math.floor(
+          (Date.now() - new Date(lastDeliveryDate).getTime()) / (1000 * 60 * 60 * 24)
+        )
+      : null;
+
     return {
       customer,
       invoiceCount: Number(inv.count ?? 0),
       deliveryCount: Number(del.count ?? 0),
-      purchaseCount: Number(pur.count ?? 0),
       lastInvoiceDate,
       lastDeliveryDate,
-      lastPurchaseDate,
       lastActivityDate: lastActivityDate ? new Date(lastActivityDate).toISOString() : null,
+      invoiceTrend,
+      deliveryTrend,
+      spendTrend,
+      categoryBreakdown,
+      orderValueBuckets,
+      rfm: {
+        recencyDays,
+        frequency: Number(del.count ?? 0),
+        monetary,
+      },
     };
   } finally {
     client.release();

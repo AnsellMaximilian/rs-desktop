@@ -3,7 +3,6 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   ArrowRight,
-  CalendarClock,
   Home,
   Loader2,
   Phone,
@@ -223,8 +222,84 @@ export default function CustomerDetailPage() {
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <Stat label="Invoices" value={state.data.invoiceCount} />
             <Stat label="Deliveries" value={state.data.deliveryCount} />
-            <Stat label="Purchases" value={state.data.purchaseCount} />
+            <Stat label="Last invoice" value={formatDate(state.data.lastInvoiceDate)} />
             <Stat label="Last delivery" value={formatDate(state.data.lastDeliveryDate)} />
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-3">
+            <div className="rounded-xl border bg-card/60 p-5 shadow-sm space-y-4">
+              <div className="text-sm font-semibold text-muted-foreground">
+                Activity (last 6 months)
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <BarChart
+                  title="Invoices"
+                  data={state.data.invoiceTrend.map((d) => ({
+                    label: d.label,
+                    value: d.count,
+                  }))}
+                  color="var(--primary)"
+                />
+                <BarChart
+                  title="Deliveries"
+                  data={state.data.deliveryTrend.map((d) => ({
+                    label: d.label,
+                    value: d.count,
+                  }))}
+                  color="var(--chart-2)"
+                />
+              </div>
+            </div>
+
+            <div className="rounded-xl border bg-card/60 p-5 shadow-sm space-y-4">
+              <div className="text-sm font-semibold text-muted-foreground">
+                Spend (last 6 months)
+              </div>
+              <LineChart data={state.data.spendTrend} />
+              <div className="grid grid-cols-3 gap-2">
+                <KpiCard
+                  label="Recency (days)"
+                  value={
+                    state.data.rfm.recencyDays !== null
+                      ? state.data.rfm.recencyDays
+                      : "—"
+                  }
+                />
+                <KpiCard label="Frequency" value={state.data.rfm.frequency} />
+                <KpiCard
+                  label="Monetary"
+                  value={`Rp ${state.data.rfm.monetary.toLocaleString()}`}
+                />
+              </div>
+            </div>
+
+            <div className="rounded-xl border bg-card/60 p-5 shadow-sm space-y-4">
+              <div className="text-sm font-semibold text-muted-foreground">
+                Order value distribution
+              </div>
+              <BucketChart data={state.data.orderValueBuckets} />
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-xl border bg-card/60 p-5 shadow-sm space-y-4">
+              <div className="text-sm font-semibold text-muted-foreground">
+                Category breakdown
+              </div>
+              <DonutChart data={state.data.categoryBreakdown} />
+            </div>
+            <div className="rounded-xl border bg-card/60 p-5 shadow-sm space-y-4">
+              <div className="text-sm font-semibold text-muted-foreground">
+                Activity split
+              </div>
+              <StackedBars
+                labels={state.data.invoiceTrend.map((d) => d.label)}
+                series={[
+                  { label: "Invoices", values: state.data.invoiceTrend.map((d) => d.count), color: "var(--primary)" },
+                  { label: "Deliveries", values: state.data.deliveryTrend.map((d) => d.count), color: "var(--chart-2)" },
+                ]}
+              />
+            </div>
           </div>
         </div>
       )}
@@ -253,6 +328,251 @@ function DetailRow({
       >
         {value}
       </div>
+    </div>
+  );
+}
+
+function BarChart({
+  title,
+  data,
+  color,
+}: {
+  title: string;
+  data: { label: string; value: number }[];
+  color: string;
+}) {
+  const max = Math.max(...data.map((d) => d.value), 1);
+  const height = 120;
+  const barWidth = 100 / data.length;
+  return (
+    <div className="space-y-3 rounded-lg border bg-background/80 p-4">
+      <div className="text-sm font-semibold text-foreground">{title}</div>
+      <svg viewBox={`0 0 100 ${height}`} className="w-full">
+        {data.map((item, idx) => {
+          const barHeight = (item.value / max) * (height - 20);
+          const x = idx * barWidth + barWidth * 0.1;
+          const y = height - barHeight;
+          return (
+            <g key={item.label}>
+              <rect
+                x={x}
+                y={y}
+                width={barWidth * 0.8}
+                height={barHeight}
+                rx={2}
+                fill={color}
+              />
+              <text
+                x={x + barWidth * 0.4}
+                y={height - 2}
+                textAnchor="middle"
+                fontSize="6"
+                fill="currentColor"
+              >
+                {item.label.split(" ")[0]}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+function BucketChart({ data }: { data: { label: string; count: number }[] }) {
+  const max = Math.max(...data.map((d) => d.count), 1);
+  return (
+    <div className="space-y-2">
+      {data.map((item) => (
+        <div key={item.label}>
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>{item.label}</span>
+            <span>{item.count}</span>
+          </div>
+          <div className="mt-1 h-2 rounded-full bg-muted">
+            <div
+              className="h-2 rounded-full bg-orange-500"
+              style={{ width: `${Math.max((item.count / max) * 100, 4)}%` }}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DonutChart({ data }: { data: { label: string; amount: number }[] }) {
+  const total = data.reduce((sum, d) => sum + d.amount, 0) || 1;
+  const radius = 40;
+  const circumference = 2 * Math.PI * radius;
+  let cumulative = 0;
+  const colors = [
+    "var(--primary)",
+    "var(--chart-2)",
+    "var(--chart-3)",
+    "var(--chart-4)",
+    "var(--chart-5)",
+    "var(--accent)",
+  ];
+
+  return (
+    <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+      <svg viewBox="0 0 120 120" className="h-32 w-32">
+        {data.length === 0 && (
+          <circle
+            cx="60"
+            cy="60"
+            r={radius}
+            fill="none"
+            stroke="var(--muted-foreground)"
+            strokeWidth="12"
+            strokeDasharray={circumference}
+            strokeDashoffset="0"
+          />
+        )}
+        {data.map((item, idx) => {
+          const percent = Math.max(item.amount / total, 0);
+          const dash = percent * circumference;
+          const offset = circumference - cumulative;
+          cumulative += dash;
+          return (
+            <circle
+              key={item.label}
+              cx="60"
+              cy="60"
+              r={radius}
+              fill="none"
+              stroke={colors[idx % colors.length]}
+              strokeWidth="12"
+              strokeDasharray={`${dash} ${circumference}`}
+              strokeDashoffset={offset}
+              transform="rotate(-90 60 60)"
+            />
+          );
+        })}
+      </svg>
+      <div className="flex-1 space-y-2">
+        {data.map((item, idx) => (
+          <div
+            key={item.label}
+            className="flex items-center justify-between rounded-md border border-border/70 bg-background px-3 py-2 text-sm"
+          >
+            <div className="flex items-center gap-2">
+              <span
+                className="h-3 w-3 rounded-full"
+                style={{ backgroundColor: colors[idx % colors.length] }}
+              />
+              <span>{item.label}</span>
+            </div>
+            <span>Rp {item.amount.toLocaleString()}</span>
+          </div>
+        ))}
+        {data.length === 0 && (
+          <div className="text-sm text-muted-foreground">No category data.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function KpiCard({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-lg border bg-background px-3 py-2 shadow-sm">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </div>
+      <div className="text-sm font-semibold text-foreground">{value}</div>
+    </div>
+  );
+}
+
+function LineChart({ data }: { data: { label: string; amount: number }[] }) {
+  const max = Math.max(...data.map((d) => d.amount), 1);
+  const width = 120;
+  const height = 80;
+  const points = data.map((item, idx) => {
+    const x = (idx / Math.max(data.length - 1, 1)) * width;
+    const y = height - (item.amount / max) * (height - 10);
+    return `${x},${y}`;
+  });
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-24 w-full">
+      <polyline
+        fill="none"
+        stroke="var(--primary)"
+        strokeWidth="2"
+        points={points.join(" ")}
+      />
+      {data.map((item, idx) => {
+        const x = (idx / Math.max(data.length - 1, 1)) * width;
+        const y = height - (item.amount / max) * (height - 10);
+        return <circle key={item.label} cx={x} cy={y} r={2.5} fill="var(--primary)" />;
+      })}
+      {data.map((item, idx) => {
+        const x = (idx / Math.max(data.length - 1, 1)) * width;
+        return (
+          <text
+            key={`${item.label}-label`}
+            x={x}
+            y={height}
+            fontSize="6"
+            textAnchor="middle"
+            fill="currentColor"
+          >
+            {item.label.split(" ")[0]}
+          </text>
+        );
+      })}
+    </svg>
+  );
+}
+
+function StackedBars({
+  labels,
+  series,
+}: {
+  labels: string[];
+  series: { label: string; values: number[]; color: string }[];
+}) {
+  const max = Math.max(
+    ...series.flatMap((s) => s.values),
+    1
+  );
+  return (
+    <div className="space-y-2">
+      {labels.map((label, idx) => {
+        return (
+          <div key={label}>
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>{label}</span>
+              <span className="flex items-center gap-2">
+                {series.map((s) => (
+                  <span key={s.label} className="flex items-center gap-1">
+                    <span
+                      className="h-2 w-2 rounded-full"
+                      style={{ backgroundColor: s.color }}
+                    />
+                    {s.values[idx]}
+                  </span>
+                ))}
+              </span>
+            </div>
+            <div className="mt-1 flex h-3 overflow-hidden rounded-full bg-muted">
+              {series.map((s) => {
+                const width = `${Math.max((s.values[idx] / max) * 100, 4)}%`;
+                return (
+                  <div
+                    key={s.label}
+                    style={{ width, backgroundColor: s.color }}
+                    className="h-3"
+                  />
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

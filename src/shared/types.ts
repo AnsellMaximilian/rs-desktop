@@ -87,11 +87,39 @@ export type CustomerDetail = {
   customer: Customer;
   invoiceCount: number;
   deliveryCount: number;
-  purchaseCount: number;
   lastInvoiceDate: string | null;
   lastDeliveryDate: string | null;
-  lastPurchaseDate: string | null;
   lastActivityDate: string | null;
+  invoiceTrend: TrendPoint[];
+  deliveryTrend: TrendPoint[];
+  spendTrend: TrendAmountPoint[];
+  categoryBreakdown: CategorySlice[];
+  orderValueBuckets: BucketSlice[];
+  rfm: {
+    recencyDays: number | null;
+    frequency: number;
+    monetary: number;
+  };
+};
+
+export type TrendPoint = {
+  label: string;
+  count: number;
+};
+
+export type TrendAmountPoint = {
+  label: string;
+  amount: number;
+};
+
+export type CategorySlice = {
+  label: string;
+  amount: number;
+};
+
+export type BucketSlice = {
+  label: string;
+  count: number;
 };
 
 export type Product = {
