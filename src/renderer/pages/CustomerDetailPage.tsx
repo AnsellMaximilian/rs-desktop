@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -10,6 +10,29 @@ import {
 } from "lucide-react";
 import type { CustomerDetail } from "../../shared/types";
 import { Button } from "@/components/ui/button";
+import {
+  ChartContainer,
+  ChartConfig,
+  ChartLegend,
+  ChartLegendContent,
+  ChartTooltip,
+  ChartTooltipContent,
+} from "@/components/ui/chart";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Line,
+  LineChart as ReLineChart,
+  Pie,
+  PieChart,
+  PolarAngleAxis,
+  RadialBar,
+  RadialBarChart,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 type DetailState =
   | { status: "loading" }
@@ -51,6 +74,32 @@ export default function CustomerDetailPage() {
   const navigate = useNavigate();
   const numericId = Number(id);
   const [state, setState] = useState<DetailState>({ status: "loading" });
+  const activityData = useMemo(() => {
+    if (state.status !== "ready") return [];
+    const base = state.data.invoiceTrend.map((item) => ({
+      label: item.label,
+      invoices: item.count,
+      deliveries: 0,
+    }));
+    const labelIndex = new Map(
+      state.data.invoiceTrend.map((item, idx) => [item.label, idx])
+    );
+
+    state.data.deliveryTrend.forEach((item) => {
+      const idx = labelIndex.get(item.label);
+      if (idx !== undefined) {
+        base[idx].deliveries = item.count;
+      } else {
+        base.push({
+          label: item.label,
+          invoices: 0,
+          deliveries: item.count,
+        });
+      }
+    });
+
+    return base;
+  }, [state]);
 
   const load = async () => {
     if (!Number.isInteger(numericId)) {
@@ -231,31 +280,14 @@ export default function CustomerDetailPage() {
               <div className="text-sm font-semibold text-muted-foreground">
                 Activity (last 6 months)
               </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <BarChart
-                  title="Invoices"
-                  data={state.data.invoiceTrend.map((d) => ({
-                    label: d.label,
-                    value: d.count,
-                  }))}
-                  color="var(--primary)"
-                />
-                <BarChart
-                  title="Deliveries"
-                  data={state.data.deliveryTrend.map((d) => ({
-                    label: d.label,
-                    value: d.count,
-                  }))}
-                  color="var(--chart-2)"
-                />
-              </div>
+              <ActivityChart data={activityData} />
             </div>
 
             <div className="rounded-xl border bg-card/60 p-5 shadow-sm space-y-4">
               <div className="text-sm font-semibold text-muted-foreground">
                 Spend (last 6 months)
               </div>
-              <LineChart data={state.data.spendTrend} />
+              <SpendChart data={state.data.spendTrend} />
               <div className="grid grid-cols-3 gap-2">
                 <KpiCard
                   label="Recency (days)"
@@ -277,7 +309,7 @@ export default function CustomerDetailPage() {
               <div className="text-sm font-semibold text-muted-foreground">
                 Order value distribution
               </div>
-              <BucketChart data={state.data.orderValueBuckets} />
+              <OrderValueChart data={state.data.orderValueBuckets} />
             </div>
           </div>
 
@@ -286,18 +318,15 @@ export default function CustomerDetailPage() {
               <div className="text-sm font-semibold text-muted-foreground">
                 Category breakdown
               </div>
-              <DonutChart data={state.data.categoryBreakdown} />
+              <CategoryDonutChart data={state.data.categoryBreakdown} />
             </div>
             <div className="rounded-xl border bg-card/60 p-5 shadow-sm space-y-4">
               <div className="text-sm font-semibold text-muted-foreground">
                 Activity split
               </div>
-              <StackedBars
-                labels={state.data.invoiceTrend.map((d) => d.label)}
-                series={[
-                  { label: "Invoices", values: state.data.invoiceTrend.map((d) => d.count), color: "var(--primary)" },
-                  { label: "Deliveries", values: state.data.deliveryTrend.map((d) => d.count), color: "var(--chart-2)" },
-                ]}
+              <ActivitySplitChart
+                invoices={state.data.invoiceCount}
+                deliveries={state.data.deliveryCount}
               />
             </div>
           </div>
@@ -332,149 +361,6 @@ function DetailRow({
   );
 }
 
-function BarChart({
-  title,
-  data,
-  color,
-}: {
-  title: string;
-  data: { label: string; value: number }[];
-  color: string;
-}) {
-  const max = Math.max(...data.map((d) => d.value), 1);
-  const height = 120;
-  const barWidth = 100 / data.length;
-  return (
-    <div className="space-y-3 rounded-lg border bg-background/80 p-4">
-      <div className="text-sm font-semibold text-foreground">{title}</div>
-      <svg viewBox={`0 0 100 ${height}`} className="w-full">
-        {data.map((item, idx) => {
-          const barHeight = (item.value / max) * (height - 20);
-          const x = idx * barWidth + barWidth * 0.1;
-          const y = height - barHeight;
-          return (
-            <g key={item.label}>
-              <rect
-                x={x}
-                y={y}
-                width={barWidth * 0.8}
-                height={barHeight}
-                rx={2}
-                fill={color}
-              />
-              <text
-                x={x + barWidth * 0.4}
-                y={height - 2}
-                textAnchor="middle"
-                fontSize="6"
-                fill="currentColor"
-              >
-                {item.label.split(" ")[0]}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-    </div>
-  );
-}
-
-function BucketChart({ data }: { data: { label: string; count: number }[] }) {
-  const max = Math.max(...data.map((d) => d.count), 1);
-  return (
-    <div className="space-y-2">
-      {data.map((item) => (
-        <div key={item.label}>
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>{item.label}</span>
-            <span>{item.count}</span>
-          </div>
-          <div className="mt-1 h-2 rounded-full bg-muted">
-            <div
-              className="h-2 rounded-full bg-orange-500"
-              style={{ width: `${Math.max((item.count / max) * 100, 4)}%` }}
-            />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function DonutChart({ data }: { data: { label: string; amount: number }[] }) {
-  const total = data.reduce((sum, d) => sum + d.amount, 0) || 1;
-  const radius = 40;
-  const circumference = 2 * Math.PI * radius;
-  let cumulative = 0;
-  const colors = [
-    "var(--primary)",
-    "var(--chart-2)",
-    "var(--chart-3)",
-    "var(--chart-4)",
-    "var(--chart-5)",
-    "var(--accent)",
-  ];
-
-  return (
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-      <svg viewBox="0 0 120 120" className="h-32 w-32">
-        {data.length === 0 && (
-          <circle
-            cx="60"
-            cy="60"
-            r={radius}
-            fill="none"
-            stroke="var(--muted-foreground)"
-            strokeWidth="12"
-            strokeDasharray={circumference}
-            strokeDashoffset="0"
-          />
-        )}
-        {data.map((item, idx) => {
-          const percent = Math.max(item.amount / total, 0);
-          const dash = percent * circumference;
-          const offset = circumference - cumulative;
-          cumulative += dash;
-          return (
-            <circle
-              key={item.label}
-              cx="60"
-              cy="60"
-              r={radius}
-              fill="none"
-              stroke={colors[idx % colors.length]}
-              strokeWidth="12"
-              strokeDasharray={`${dash} ${circumference}`}
-              strokeDashoffset={offset}
-              transform="rotate(-90 60 60)"
-            />
-          );
-        })}
-      </svg>
-      <div className="flex-1 space-y-2">
-        {data.map((item, idx) => (
-          <div
-            key={item.label}
-            className="flex items-center justify-between rounded-md border border-border/70 bg-background px-3 py-2 text-sm"
-          >
-            <div className="flex items-center gap-2">
-              <span
-                className="h-3 w-3 rounded-full"
-                style={{ backgroundColor: colors[idx % colors.length] }}
-              />
-              <span>{item.label}</span>
-            </div>
-            <span>Rp {item.amount.toLocaleString()}</span>
-          </div>
-        ))}
-        {data.length === 0 && (
-          <div className="text-sm text-muted-foreground">No category data.</div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function KpiCard({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="rounded-lg border bg-background px-3 py-2 shadow-sm">
@@ -486,93 +372,270 @@ function KpiCard({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-function LineChart({ data }: { data: { label: string; amount: number }[] }) {
-  const max = Math.max(...data.map((d) => d.amount), 1);
-  const width = 120;
-  const height = 80;
-  const points = data.map((item, idx) => {
-    const x = (idx / Math.max(data.length - 1, 1)) * width;
-    const y = height - (item.amount / max) * (height - 10);
-    return `${x},${y}`;
-  });
+function ActivityChart({
+  data,
+}: {
+  data: { label: string; invoices: number; deliveries: number }[];
+}) {
+  const chartConfig = {
+    invoices: { label: "Invoices", color: "var(--chart-1)" },
+    deliveries: { label: "Deliveries", color: "var(--chart-2)" },
+  } as const;
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="h-24 w-full">
-      <polyline
-        fill="none"
-        stroke="var(--primary)"
-        strokeWidth="2"
-        points={points.join(" ")}
-      />
-      {data.map((item, idx) => {
-        const x = (idx / Math.max(data.length - 1, 1)) * width;
-        const y = height - (item.amount / max) * (height - 10);
-        return <circle key={item.label} cx={x} cy={y} r={2.5} fill="var(--primary)" />;
-      })}
-      {data.map((item, idx) => {
-        const x = (idx / Math.max(data.length - 1, 1)) * width;
-        return (
-          <text
-            key={`${item.label}-label`}
-            x={x}
-            y={height}
-            fontSize="6"
-            textAnchor="middle"
-            fill="currentColor"
-          >
-            {item.label.split(" ")[0]}
-          </text>
-        );
-      })}
-    </svg>
+    <ChartContainer
+      className="aspect-auto h-64 w-full"
+      config={chartConfig}
+    >
+      <BarChart data={data} margin={{ left: -12, right: 12, bottom: 8 }}>
+        <CartesianGrid vertical={false} strokeDasharray="3 3" />
+        <XAxis
+          dataKey="label"
+          axisLine={false}
+          tickLine={false}
+          tickMargin={8}
+        />
+        <YAxis
+          allowDecimals={false}
+          axisLine={false}
+          tickLine={false}
+          tickMargin={6}
+        />
+        <ChartTooltip content={<ChartTooltipContent />} />
+        <ChartLegend content={<ChartLegendContent />} />
+        <Bar
+          dataKey="invoices"
+          fill="var(--color-invoices)"
+          radius={[6, 6, 0, 0]}
+          maxBarSize={22}
+        />
+        <Bar
+          dataKey="deliveries"
+          fill="var(--color-deliveries)"
+          radius={[6, 6, 0, 0]}
+          maxBarSize={22}
+        />
+      </BarChart>
+    </ChartContainer>
   );
 }
 
-function StackedBars({
-  labels,
-  series,
-}: {
-  labels: string[];
-  series: { label: string; values: number[]; color: string }[];
-}) {
-  const max = Math.max(
-    ...series.flatMap((s) => s.values),
-    1
-  );
+function SpendChart({ data }: { data: { label: string; amount: number }[] }) {
+  const chartConfig = {
+    amount: { label: "Spend", color: "var(--chart-3)" },
+  } as const;
+
   return (
-    <div className="space-y-2">
-      {labels.map((label, idx) => {
-        return (
-          <div key={label}>
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>{label}</span>
-              <span className="flex items-center gap-2">
-                {series.map((s) => (
-                  <span key={s.label} className="flex items-center gap-1">
-                    <span
-                      className="h-2 w-2 rounded-full"
-                      style={{ backgroundColor: s.color }}
-                    />
-                    {s.values[idx]}
+    <ChartContainer
+      className="aspect-auto h-60 w-full"
+      config={chartConfig}
+    >
+      <ReLineChart data={data} margin={{ left: -12, right: 12, bottom: 8 }}>
+        <CartesianGrid vertical={false} strokeDasharray="3 3" />
+        <XAxis
+          dataKey="label"
+          axisLine={false}
+          tickLine={false}
+          tickMargin={8}
+        />
+        <YAxis
+          allowDecimals={false}
+          axisLine={false}
+          tickLine={false}
+          tickMargin={6}
+        />
+        <ChartTooltip content={<ChartTooltipContent />} />
+        <Line
+          type="monotone"
+          dataKey="amount"
+          stroke="var(--color-amount)"
+          strokeWidth={2.2}
+          dot={{ r: 3 }}
+          activeDot={{ r: 5 }}
+        />
+      </ReLineChart>
+    </ChartContainer>
+  );
+}
+
+function OrderValueChart({
+  data,
+}: {
+  data: { label: string; count: number }[];
+}) {
+  const chartConfig = {
+    orders: { label: "Orders", color: "var(--chart-4)" },
+  } as const;
+
+  if (!data.length) {
+    return (
+      <div className="rounded-lg border bg-background px-4 py-6 text-sm text-muted-foreground">
+        No order value data.
+      </div>
+    );
+  }
+
+  return (
+    <ChartContainer
+      className="aspect-auto h-64 w-full"
+      config={chartConfig}
+    >
+      <BarChart
+        data={data}
+        layout="vertical"
+        margin={{ left: 12, right: 12, bottom: 8 }}
+      >
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis
+          type="number"
+          allowDecimals={false}
+          axisLine={false}
+          tickLine={false}
+          tickMargin={6}
+        />
+        <YAxis
+          dataKey="label"
+          type="category"
+          axisLine={false}
+          tickLine={false}
+          width={100}
+        />
+        <ChartTooltip content={<ChartTooltipContent />} />
+        <Bar
+          dataKey="count"
+          fill="var(--color-orders)"
+          radius={[0, 6, 6, 0]}
+          barSize={16}
+        />
+      </BarChart>
+    </ChartContainer>
+  );
+}
+
+function CategoryDonutChart({
+  data,
+}: {
+  data: { label: string; amount: number }[];
+}) {
+  const colors = [
+    "var(--chart-1)",
+    "var(--chart-2)",
+    "var(--chart-3)",
+    "var(--chart-4)",
+    "var(--chart-5)",
+  ];
+
+  if (!data.length) {
+    return (
+      <div className="rounded-lg border bg-background px-4 py-6 text-sm text-muted-foreground">
+        No category data.
+      </div>
+    );
+  }
+
+  const config = data.reduce<ChartConfig>((acc, slice) => {
+    acc[slice.label] = { label: slice.label };
+    return acc;
+  }, {});
+
+  return (
+    <ChartContainer
+      className="aspect-auto h-64 w-full"
+      config={config}
+    >
+      <PieChart>
+        <Pie
+          data={data}
+          dataKey="amount"
+          nameKey="label"
+          innerRadius={45}
+          outerRadius={70}
+          paddingAngle={3}
+        >
+          {data.map((entry, idx) => (
+            <Cell
+              key={entry.label}
+              fill={colors[idx % colors.length]}
+              stroke="transparent"
+            />
+          ))}
+        </Pie>
+        <ChartTooltip
+          content={
+            <ChartTooltipContent
+              labelKey="label"
+              nameKey="label"
+              formatter={(value: number, name) => (
+                <>
+                  <span className="text-muted-foreground">{name}</span>
+                  <span className="font-mono font-medium tabular-nums text-foreground">
+                    Rp {value.toLocaleString()}
                   </span>
-                ))}
-              </span>
-            </div>
-            <div className="mt-1 flex h-3 overflow-hidden rounded-full bg-muted">
-              {series.map((s) => {
-                const width = `${Math.max((s.values[idx] / max) * 100, 4)}%`;
-                return (
-                  <div
-                    key={s.label}
-                    style={{ width, backgroundColor: s.color }}
-                    className="h-3"
-                  />
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
-    </div>
+                </>
+              )}
+            />
+          }
+        />
+        <ChartLegend content={<ChartLegendContent nameKey="label" />} />
+      </PieChart>
+    </ChartContainer>
+  );
+}
+
+function ActivitySplitChart({
+  invoices,
+  deliveries,
+}: {
+  invoices: number;
+  deliveries: number;
+}) {
+  const data = [
+    { name: "Invoices", value: invoices, fill: "var(--chart-1)" },
+    { name: "Deliveries", value: deliveries, fill: "var(--chart-2)" },
+  ];
+
+  const chartConfig = {
+    Invoices: { label: "Invoices" },
+    Deliveries: { label: "Deliveries" },
+  } as const;
+
+  return (
+    <ChartContainer
+      className="aspect-auto h-64 w-full"
+      config={chartConfig}
+    >
+      <RadialBarChart
+        data={data}
+        innerRadius="30%"
+        outerRadius="80%"
+        startAngle={90}
+        endAngle={-270}
+      >
+        <PolarAngleAxis type="number" domain={[0, Math.max(invoices, deliveries, 1)]} tick={false} />
+        <RadialBar
+          dataKey="value"
+          background
+          cornerRadius={8}
+          stackId="activity"
+        />
+        <ChartTooltip
+          content={
+            <ChartTooltipContent
+              hideIndicator
+              labelFormatter={(value) => value}
+              formatter={(value: number, name) => (
+                <>
+                  <span className="text-muted-foreground">{name}</span>
+                  <span className="font-mono font-medium tabular-nums text-foreground">
+                    {value.toLocaleString()}
+                  </span>
+                </>
+              )}
+            />
+          }
+        />
+        <ChartLegend content={<ChartLegendContent nameKey="name" />} />
+      </RadialBarChart>
+    </ChartContainer>
   );
 }
