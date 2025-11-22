@@ -52,7 +52,7 @@ export const Sidebar = React.forwardRef<
       ref={ref}
       data-collapsed={isCollapsed}
       className={cn(
-        "group/sidebar relative flex h-screen shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground transition-[width] duration-300",
+        "group/sidebar sticky top-0 self-start relative flex h-screen max-h-screen shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground transition-[width] duration-300",
         isCollapsed ? "w-[72px]" : "w-64",
         className
       )}
@@ -68,7 +68,7 @@ export const SidebarContent = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("flex flex-1 flex-col gap-4", className)}
+    className={cn("flex flex-1 flex-col gap-4 overflow-y-auto", className)}
     {...props}
   />
 ));
@@ -145,11 +145,11 @@ export const SidebarMenuButton = React.forwardRef<
   const { isCollapsed } = useSidebar();
 
   const mergedClassName = cn(
-    "group inline-flex h-11 items-center gap-3 rounded-md text-sm font-medium transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar",
+    "group inline-flex h-11 items-center gap-3 rounded-md text-sm font-medium transition-colors hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar",
     isCollapsed ? "w-11 justify-center px-0" : "w-full justify-start px-3",
     active
-      ? "bg-sidebar-primary text-sidebar-primary-foreground"
-      : "text-sidebar-foreground",
+      ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
+      : "text-sidebar-foreground/80",
     className
   );
 
@@ -183,7 +183,7 @@ export const SidebarTrigger = React.forwardRef<
       type="button"
       onClick={toggle}
       className={cn(
-        "inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-sidebar text-sidebar-foreground/80 transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar",
+        "inline-flex h-9 w-9 items-center justify-center rounded-md border border-sidebar-border bg-sidebar text-sidebar-foreground/80 transition hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar",
         className
       )}
       {...props}

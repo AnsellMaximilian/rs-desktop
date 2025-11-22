@@ -61,7 +61,7 @@ function SidebarNav() {
 export default function MainLayout() {
   return (
     <SidebarProvider>
-      <div className="flex min-h-screen bg-background text-foreground">
+      <div className="flex min-h-screen max-h-screen overflow-hidden bg-background text-foreground">
         <Sidebar className="bg-sidebar text-sidebar-foreground">
           <SidebarContent>
             <SidebarGroup>
@@ -74,14 +74,14 @@ export default function MainLayout() {
             </SidebarGroup>
           </SidebarContent>
         </Sidebar>
-        <SidebarInset className="bg-background text-foreground">
+        <SidebarInset className="bg-background text-foreground max-h-screen">
           <header className="flex h-14 items-center gap-3 border-b border-border/70 bg-card px-4">
             <SidebarTrigger />
             <div className="text-sm font-semibold tracking-wide">
               Inventory
             </div>
           </header>
-          <main className="flex-1 px-6 py-6">
+          <main className="flex-1 overflow-auto px-6 py-6">
             <Outlet />
           </main>
         </SidebarInset>
