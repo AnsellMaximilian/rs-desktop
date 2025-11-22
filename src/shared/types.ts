@@ -13,6 +13,7 @@ export type AppAPI = {
   customers: {
     list: (input: CustomersListRequest) => Promise<CustomersListResponse>;
     overview: () => Promise<CustomersOverview>;
+    detail: (id: number) => Promise<CustomerDetail>;
   };
   products: {
     list: (input: ProductsListRequest) => Promise<ProductsListResponse>;
@@ -80,6 +81,17 @@ export type CustomersOverview = {
   withInvoices30d: number;
   lastInvoiceDate: string | null;
   topRegions: RegionCount[];
+};
+
+export type CustomerDetail = {
+  customer: Customer;
+  invoiceCount: number;
+  deliveryCount: number;
+  purchaseCount: number;
+  lastInvoiceDate: string | null;
+  lastDeliveryDate: string | null;
+  lastPurchaseDate: string | null;
+  lastActivityDate: string | null;
 };
 
 export type Product = {

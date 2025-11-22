@@ -9,6 +9,7 @@ import loader from "./lib/loader";
 import ErrorPage from "./pages/ErrorPage";
 import HomePage from "./pages/HomePage";
 import CustomersPage from "./pages/CustomersPage";
+import CustomerDetailPage from "./pages/CustomerDetailPage";
 import ProductsPage from "./pages/ProductsPage";
 
 const router = createBrowserRouter([
@@ -30,6 +31,10 @@ const router = createBrowserRouter([
       {
         path: "/customers",
         element: <CustomersPage />,
+      },
+      {
+        path: "/customers/:id",
+        element: <CustomerDetailPage />,
       },
       {
         path: "/products",

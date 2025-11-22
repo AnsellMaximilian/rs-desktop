@@ -263,6 +263,122 @@ export async function getCustomersOverview(): Promise<CustomersOverview> {
   }
 }
 
+export async function getCustomerDetail(id: number): Promise<CustomerDetail> {
+  const pool = await getPool();
+  const client = await pool.connect();
+
+  const customerQuery = `
+    SELECT
+      c.id,
+      c."fullName",
+      c.phone,
+      c.address,
+      c."createdAt",
+      c."updatedAt",
+      c."rsMember",
+      c."receiveDrDiscount",
+      c."RegionId" as "regionId",
+      r."name" as "regionName",
+      c.note,
+      c."accountName",
+      c."accountNumber",
+      c."isActive"
+    FROM "Customers" c
+    LEFT JOIN "Regions" r ON c."RegionId" = r.id
+    WHERE c.id = $1
+    LIMIT 1
+  `;
+
+  const invoiceQuery = `
+    SELECT COUNT(*)::int AS count, MAX(date) AS "lastDate"
+    FROM "Invoices"
+    WHERE "CustomerId" = $1
+  `;
+
+  const deliveryQuery = `
+    SELECT COUNT(*)::int AS count, MAX(date) AS "lastDate"
+    FROM "Deliveries"
+    WHERE "CustomerId" = $1
+  `;
+
+  const purchaseQuery = `
+    SELECT COUNT(*)::int AS count, MAX("createdAt") AS "lastDate"
+    FROM "PurchaseDetails"
+    WHERE "CustomerId" = $1
+  `;
+
+  try {
+    const [customerResult, invoiceResult, deliveryResult, purchaseResult] =
+      await Promise.all([
+        client.query(customerQuery, [id]),
+        client.query(invoiceQuery, [id]),
+        client.query(deliveryQuery, [id]),
+        client.query(purchaseQuery, [id]),
+      ]);
+
+    if (customerResult.rows.length === 0) {
+      throw new Error("Customer not found");
+    }
+
+    const c = customerResult.rows[0];
+
+    const customer: Customer = {
+      id: c.id,
+      fullName: c.fullName,
+      phone: c.phone ?? null,
+      address: c.address ?? null,
+      createdAt:
+        c.createdAt instanceof Date
+          ? c.createdAt.toISOString()
+          : c.createdAt?.toString?.() ?? "",
+      updatedAt:
+        c.updatedAt instanceof Date
+          ? c.updatedAt.toISOString()
+          : c.updatedAt?.toString?.() ?? "",
+      rsMember: c.rsMember ?? null,
+      receiveDrDiscount: c.receiveDrDiscount ?? null,
+      regionId: c.regionId ?? null,
+      regionName: c.regionName ?? null,
+      note: c.note ?? null,
+      accountName: c.accountName ?? null,
+      accountNumber: c.accountNumber ?? null,
+      isActive: c.isActive ?? null,
+    };
+
+    const inv = invoiceResult.rows[0] ?? {};
+    const del = deliveryResult.rows[0] ?? {};
+    const pur = purchaseResult.rows[0] ?? {};
+
+    const lastInvoiceDate =
+      inv.lastDate instanceof Date ? inv.lastDate.toISOString() : inv.lastDate ?? null;
+    const lastDeliveryDate =
+      del.lastDate instanceof Date ? del.lastDate.toISOString() : del.lastDate ?? null;
+    const lastPurchaseDate =
+      pur.lastDate instanceof Date ? pur.lastDate.toISOString() : pur.lastDate ?? null;
+
+    const lastActivityDate = [lastInvoiceDate, lastDeliveryDate, lastPurchaseDate]
+      .filter(Boolean)
+      .map((d) => new Date(d as string).getTime())
+      .reduce<number | null>((max, ts) => {
+        if (Number.isNaN(ts)) return max;
+        return max === null ? ts : Math.max(max, ts);
+      }, null);
+
+    return {
+      customer,
+      invoiceCount: Number(inv.count ?? 0),
+      deliveryCount: Number(del.count ?? 0),
+      purchaseCount: Number(pur.count ?? 0),
+      lastInvoiceDate,
+      lastDeliveryDate,
+      lastPurchaseDate,
+      lastActivityDate: lastActivityDate ? new Date(lastActivityDate).toISOString() : null,
+    };
+  } finally {
+    client.release();
+  }
+}
+
 const PRODUCT_SORT_MAP: Record<ProductsSortKey, string> = {
   name: `p."name"`,
   price: `p.price`,

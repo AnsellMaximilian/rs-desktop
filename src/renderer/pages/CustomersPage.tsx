@@ -29,6 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useNavigate } from "react-router-dom";
 
 type TableSortKey = Extract<CustomersSortKey, "fullName" | "phone" | "region" | "createdAt" | "updatedAt" | "isActive">;
 
@@ -104,6 +105,7 @@ function StatCard({
 }
 
 export default function CustomersPage() {
+  const navigate = useNavigate();
   const [data, setData] = useState<Customer[]>([]);
   const [total, setTotal] = useState(0);
   const [pagination, setPagination] = useState({
@@ -513,7 +515,11 @@ export default function CustomersPage() {
               {!isLoading &&
                 fetchState.status !== "error" &&
                 table.getRowModel().rows.map((row) => (
-                  <TableRow key={row.id}>
+                  <TableRow
+                    key={row.id}
+                    className="cursor-pointer hover:bg-accent/50"
+                    onClick={() => navigate(`/customers/${row.original.id}`)}
+                  >
                     {row.getVisibleCells().map((cell) => (
                       <TableCell key={cell.id}>
                         {flexRender(

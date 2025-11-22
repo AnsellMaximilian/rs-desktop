@@ -21,7 +21,7 @@ export const CHANNELS = {
   ] as const),
   AUTH: makeChannels("auth", ["LOGIN", "LOGOUT", "ME"] as const),
   DATABASE: makeChannels("database", ["PING"] as const),
-  CUSTOMERS: makeChannels("customers", ["LIST", "OVERVIEW"] as const),
+  CUSTOMERS: makeChannels("customers", ["LIST", "OVERVIEW", "DETAIL"] as const),
   PRODUCTS: makeChannels("products", ["LIST", "OVERVIEW"] as const),
 } as const;
 
