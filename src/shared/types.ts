@@ -14,6 +14,10 @@ export type AppAPI = {
     list: (input: CustomersListRequest) => Promise<CustomersListResponse>;
     overview: () => Promise<CustomersOverview>;
   };
+  products: {
+    list: (input: ProductsListRequest) => Promise<ProductsListResponse>;
+    overview: () => Promise<ProductsOverview>;
+  };
 };
 
 export type DatabasePingResult = {
@@ -76,4 +80,67 @@ export type CustomersOverview = {
   withInvoices30d: number;
   lastInvoiceDate: string | null;
   topRegions: RegionCount[];
+};
+
+export type Product = {
+  id: number;
+  name: string;
+  price: number;
+  resellerPrice: number | null;
+  cost: number;
+  unit: string;
+  categoryId: number | null;
+  categoryName: string | null;
+  supplierId: number | null;
+  supplierName: string | null;
+  keepStockSince: string | null;
+  restockNumber: number | null;
+  isActive: boolean | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ProductsSortKey =
+  | "name"
+  | "price"
+  | "cost"
+  | "category"
+  | "supplier"
+  | "createdAt"
+  | "updatedAt"
+  | "isActive";
+
+export type ProductsListRequest = {
+  search?: string;
+  limit?: number;
+  offset?: number;
+  sortBy?: ProductsSortKey;
+  sortDir?: "asc" | "desc";
+};
+
+export type ProductsListResponse = {
+  data: Product[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type TopItem = {
+  label: string;
+  value: number;
+};
+
+export type ProductsOverview = {
+  total: number;
+  active: number;
+  inactive: number;
+  categories: number;
+  suppliers: number;
+  purchased30d: number;
+  sold30d: number;
+  lastPurchaseDate: string | null;
+  lastSaleDate: string | null;
+  topCategories: TopItem[];
+  topSuppliers: TopItem[];
+  topSellers30d: TopItem[];
 };

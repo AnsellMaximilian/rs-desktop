@@ -1,6 +1,12 @@
 import { dialog, ipcMain } from "electron";
 import { CHANNELS } from "../../shared/channels";
-import { getCustomersOverview, listCustomers, pingDatabase } from "../db";
+import {
+  getCustomersOverview,
+  getProductsOverview,
+  listCustomers,
+  listProducts,
+  pingDatabase,
+} from "../db";
 
 const initHandlers = () => {
   ipcMain.handle(CHANNELS.FILES.PICK_FOLDER, async () => {
@@ -24,6 +30,16 @@ const initHandlers = () => {
 
   ipcMain.handle(CHANNELS.CUSTOMERS.OVERVIEW, async () => {
     const result = await getCustomersOverview();
+    return result;
+  });
+
+  ipcMain.handle(CHANNELS.PRODUCTS.LIST, async (_, payload) => {
+    const result = await listProducts(payload);
+    return result;
+  });
+
+  ipcMain.handle(CHANNELS.PRODUCTS.OVERVIEW, async () => {
+    const result = await getProductsOverview();
     return result;
   });
 };

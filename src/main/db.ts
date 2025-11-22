@@ -5,6 +5,11 @@ import type {
   CustomersSortKey,
   CustomersOverview,
   RegionCount,
+  Product,
+  ProductsListRequest,
+  ProductsSortKey,
+  ProductsOverview,
+  TopItem,
 } from "../shared/types";
 
 let pool: Pool | null = null;
@@ -248,6 +253,248 @@ export async function getCustomersOverview(): Promise<CustomersOverview> {
         (row): RegionCount => ({
           regionName: row.regionName ?? "Unspecified",
           count: Number(row.count ?? 0),
+        })
+      ),
+    };
+
+    return overview;
+  } finally {
+    client.release();
+  }
+}
+
+const PRODUCT_SORT_MAP: Record<ProductsSortKey, string> = {
+  name: `p."name"`,
+  price: `p.price`,
+  cost: `p.cost`,
+  category: `pc."name"`,
+  supplier: `s."name"`,
+  createdAt: `p."createdAt"`,
+  updatedAt: `p."updatedAt"`,
+  isActive: `p."isActive"`,
+};
+
+export async function listProducts(
+  input: ProductsListRequest = {}
+): Promise<{ data: Product[]; total: number; limit: number; offset: number }> {
+  const pool = await getPool();
+  const limit = Math.max(
+    1,
+    Math.min(input.limit ?? DEFAULT_LIMIT, MAX_LIMIT)
+  );
+  const offset = Math.max(input.offset ?? 0, 0);
+  const search = input.search?.trim();
+  const sortBy =
+    input.sortBy && PRODUCT_SORT_MAP[input.sortBy]
+      ? input.sortBy
+      : ("updatedAt" as const);
+  const sortDir = input.sortDir === "desc" ? "desc" : "asc";
+
+  const whereParts: string[] = [];
+  const params: unknown[] = [];
+
+  if (search) {
+    params.push(`%${search}%`);
+    const idx = `$${params.length}`;
+    whereParts.push(
+      `(p."name" ILIKE ${idx} OR pc."name" ILIKE ${idx} OR s."name" ILIKE ${idx})`
+    );
+  }
+
+  const whereClause = whereParts.length ? `WHERE ${whereParts.join(" AND ")}` : "";
+  const sortColumn = PRODUCT_SORT_MAP[sortBy];
+  const orderClause = `ORDER BY ${sortColumn} ${sortDir}, p.id ASC`;
+
+  const dataParams = [...params, limit, offset];
+  const dataQuery = `
+    SELECT
+      p.id,
+      p."name",
+      p.price,
+      p."resellerPrice",
+      p.cost,
+      p.unit,
+      p."ProductCategoryId" as "categoryId",
+      pc."name" as "categoryName",
+      p."SupplierId" as "supplierId",
+      s."name" as "supplierName",
+      p."keepStockSince",
+      p."restockNumber",
+      p."isActive",
+      p."createdAt",
+      p."updatedAt"
+    FROM "Products" p
+    LEFT JOIN "ProductCategories" pc ON p."ProductCategoryId" = pc.id
+    LEFT JOIN "Suppliers" s ON p."SupplierId" = s.id
+    ${whereClause}
+    ${orderClause}
+    LIMIT $${params.length + 1}
+    OFFSET $${params.length + 2}
+  `;
+
+  const countQuery = `
+    SELECT COUNT(*)::int AS count
+    FROM "Products" p
+    LEFT JOIN "ProductCategories" pc ON p."ProductCategoryId" = pc.id
+    LEFT JOIN "Suppliers" s ON p."SupplierId" = s.id
+    ${whereClause}
+  `;
+
+  const client = await pool.connect();
+  try {
+    const [dataResult, countResult] = await Promise.all([
+      client.query(dataQuery, dataParams),
+      client.query(countQuery, params),
+    ]);
+
+    const data: Product[] = dataResult.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      price: Number(row.price ?? 0),
+      resellerPrice: row.resellerPrice !== null ? Number(row.resellerPrice) : null,
+      cost: Number(row.cost ?? 0),
+      unit: row.unit ?? "",
+      categoryId: row.categoryId ?? null,
+      categoryName: row.categoryName ?? null,
+      supplierId: row.supplierId ?? null,
+      supplierName: row.supplierName ?? null,
+      keepStockSince:
+        row.keepStockSince instanceof Date
+          ? row.keepStockSince.toISOString()
+          : row.keepStockSince ?? null,
+      restockNumber: row.restockNumber !== null ? Number(row.restockNumber) : null,
+      isActive: row.isActive ?? null,
+      createdAt:
+        row.createdAt instanceof Date
+          ? row.createdAt.toISOString()
+          : row.createdAt?.toString?.() ?? "",
+      updatedAt:
+        row.updatedAt instanceof Date
+          ? row.updatedAt.toISOString()
+          : row.updatedAt?.toString?.() ?? "",
+    }));
+
+    const total = Number(countResult.rows[0]?.count ?? 0);
+
+    return { data, total, limit, offset };
+  } finally {
+    client.release();
+  }
+}
+
+export async function getProductsOverview(): Promise<ProductsOverview> {
+  const pool = await getPool();
+  const client = await pool.connect();
+
+  const summaryQuery = `
+    SELECT
+      (SELECT COUNT(*) FROM "Products")::int AS total,
+      (SELECT COUNT(*) FROM "Products" WHERE "isActive" = true)::int AS active,
+      (SELECT COUNT(*) FROM "Products" WHERE "isActive" = false)::int AS inactive,
+      (SELECT COUNT(DISTINCT "ProductCategoryId") FROM "Products")::int AS categories,
+      (SELECT COUNT(DISTINCT "SupplierId") FROM "Products")::int AS suppliers,
+      (
+        SELECT COALESCE(SUM(dd.qty), 0)
+        FROM "DeliveryDetails" dd
+        WHERE dd."ProductId" IS NOT NULL
+          AND dd."createdAt" >= (CURRENT_DATE - INTERVAL '30 days')
+      )::numeric AS sold30d,
+      (
+        SELECT COALESCE(SUM(pd.qty), 0)
+        FROM "PurchaseDetails" pd
+        WHERE pd."ProductId" IS NOT NULL
+          AND pd."createdAt" >= (CURRENT_DATE - INTERVAL '30 days')
+      )::numeric AS purchased30d,
+      (
+        SELECT MAX(dd."createdAt")
+        FROM "DeliveryDetails" dd
+        WHERE dd."ProductId" IS NOT NULL
+      ) AS "lastSaleDate",
+      (
+        SELECT MAX(pd."createdAt")
+        FROM "PurchaseDetails" pd
+        WHERE pd."ProductId" IS NOT NULL
+      ) AS "lastPurchaseDate"
+  `;
+
+  const topCategoriesQuery = `
+    SELECT
+      COALESCE(pc."name", 'Uncategorized') AS label,
+      COUNT(*)::int AS value
+    FROM "Products" p
+    LEFT JOIN "ProductCategories" pc ON p."ProductCategoryId" = pc.id
+    GROUP BY pc."name"
+    ORDER BY value DESC, label ASC
+    LIMIT 5
+  `;
+
+  const topSuppliersQuery = `
+    SELECT
+      COALESCE(s."name", 'Unspecified') AS label,
+      COUNT(*)::int AS value
+    FROM "Products" p
+    LEFT JOIN "Suppliers" s ON p."SupplierId" = s.id
+    GROUP BY s."name"
+    ORDER BY value DESC, label ASC
+    LIMIT 5
+  `;
+
+  const topSellersQuery = `
+    SELECT
+      p."name" AS label,
+      COALESCE(SUM(dd.qty), 0)::numeric AS value
+    FROM "DeliveryDetails" dd
+    JOIN "Products" p ON dd."ProductId" = p.id
+    WHERE dd."createdAt" >= (CURRENT_DATE - INTERVAL '30 days')
+    GROUP BY p."name"
+    ORDER BY value DESC, label ASC
+    LIMIT 5
+  `;
+
+  try {
+    const [summaryResult, catResult, supResult, sellerResult] =
+      await Promise.all([
+        client.query(summaryQuery),
+        client.query(topCategoriesQuery),
+        client.query(topSuppliersQuery),
+        client.query(topSellersQuery),
+      ]);
+
+    const summaryRow = summaryResult.rows[0] ?? {};
+    const toNumber = (v: unknown) => Number(v ?? 0);
+
+    const overview: ProductsOverview = {
+      total: toNumber(summaryRow.total),
+      active: toNumber(summaryRow.active),
+      inactive: toNumber(summaryRow.inactive),
+      categories: toNumber(summaryRow.categories),
+      suppliers: toNumber(summaryRow.suppliers),
+      purchased30d: Number(summaryRow.purchased30d ?? 0),
+      sold30d: Number(summaryRow.sold30d ?? 0),
+      lastPurchaseDate:
+        summaryRow.lastPurchaseDate instanceof Date
+          ? summaryRow.lastPurchaseDate.toISOString()
+          : summaryRow.lastPurchaseDate ?? null,
+      lastSaleDate:
+        summaryRow.lastSaleDate instanceof Date
+          ? summaryRow.lastSaleDate.toISOString()
+          : summaryRow.lastSaleDate ?? null,
+      topCategories: catResult.rows.map(
+        (row): TopItem => ({
+          label: row.label ?? "Uncategorized",
+          value: Number(row.value ?? 0),
+        })
+      ),
+      topSuppliers: supResult.rows.map(
+        (row): TopItem => ({
+          label: row.label ?? "Unspecified",
+          value: Number(row.value ?? 0),
+        })
+      ),
+      topSellers30d: sellerResult.rows.map(
+        (row): TopItem => ({
+          label: row.label ?? "Unknown",
+          value: Number(row.value ?? 0),
         })
       ),
     };
