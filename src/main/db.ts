@@ -1,27 +1,38 @@
-import type { Pool } from "pg";
+import { Pool } from "pg";
 
 let pool: Pool | null = null;
 
-const connectionString =
-  process.env.DATABASE_URL ||
-  process.env.POSTGRES_URL ||
-  process.env.POSTGRES_CONNECTION_STRING;
-
-async function loadPoolCtor() {
-  const mod = await import("pg");
-  return mod.Pool;
+function maskConnectionString(raw: string) {
+  try {
+    const url = new URL(raw);
+    if (url.password) {
+      url.password = "***";
+    }
+    return url.toString();
+  } catch (err) {
+    // Fallback to raw string if parsing fails.
+    return raw;
+  }
 }
 
 async function getPool() {
+  const connectionString =
+    process.env.DATABASE_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.POSTGRES_CONNECTION_STRING;
+
   if (!connectionString) {
+    console.error(
+      "[db] DATABASE_URL/POSTGRES_URL/POSTGRES_CONNECTION_STRING is not set."
+    );
     throw new Error(
       "DATABASE_URL is not set. Provide a Postgres connection string to enable database access."
     );
   }
 
   if (!pool) {
-    const PoolCtor = await loadPoolCtor();
-    pool = new PoolCtor({
+    console.log("[db] Using connection string:", maskConnectionString(connectionString));
+    pool = new Pool({
       connectionString,
       max: 5,
       idleTimeoutMillis: 30_000,

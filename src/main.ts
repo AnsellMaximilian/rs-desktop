@@ -5,7 +5,31 @@ import started from "electron-squirrel-startup";
 import initHandlers from "./main/handlers";
 import { closePool } from "./main/db";
 
-dotenv.config();
+const envPath = path.resolve(process.cwd(), ".env");
+const envResult = dotenv.config({ path: envPath });
+
+function maskConnectionString(raw?: string) {
+  if (!raw) return undefined;
+  try {
+    const url = new URL(raw);
+    if (url.password) {
+      url.password = "***";
+    }
+    return url.toString();
+  } catch (err) {
+    return raw;
+  }
+}
+
+if (envResult.error) {
+  console.warn("[env] Failed to load .env from", envPath, envResult.error);
+} else {
+  console.log("[env] Loaded .env from", envPath);
+}
+console.log(
+  "[env] DATABASE_URL",
+  maskConnectionString(process.env.DATABASE_URL) ?? "not set"
+);
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {

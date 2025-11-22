@@ -17,6 +17,7 @@ export default function HomePage() {
         if (cancelled) return;
         setState({ status: "ok", database: result.database, now: result.now });
       } catch (err) {
+        console.error("[Home] Database ping failed", err);
         if (cancelled) return;
         const message =
           err instanceof Error ? err.message : "Failed to reach database";
