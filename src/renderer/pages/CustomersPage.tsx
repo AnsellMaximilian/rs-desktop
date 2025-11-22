@@ -14,7 +14,11 @@ import {
   RefreshCw,
   Search,
 } from "lucide-react";
-import type { Customer, CustomersSortKey } from "../../shared/types";
+import type {
+  Customer,
+  CustomersOverview,
+  CustomersSortKey,
+} from "../../shared/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -33,6 +37,10 @@ type FetchState =
   | { status: "loading" }
   | { status: "error"; message: string }
   | { status: "ready" };
+type OverviewState =
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "ready"; data: CustomersOverview };
 
 const DEFAULT_PAGE_SIZE = 10;
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
@@ -73,6 +81,28 @@ function formatDate(value: string) {
   });
 }
 
+function StatCard({
+  label,
+  value,
+  helper,
+}: {
+  label: string;
+  value: string | number;
+  helper?: string;
+}) {
+  return (
+    <div className="rounded-xl border bg-card/60 p-4 shadow-sm">
+      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </div>
+      <div className="mt-2 text-2xl font-semibold text-foreground">{value}</div>
+      {helper && (
+        <div className="mt-1 text-xs text-muted-foreground">{helper}</div>
+      )}
+    </div>
+  );
+}
+
 export default function CustomersPage() {
   const [data, setData] = useState<Customer[]>([]);
   const [total, setTotal] = useState(0);
@@ -86,6 +116,9 @@ export default function CustomersPage() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [fetchState, setFetchState] = useState<FetchState>({
+    status: "loading",
+  });
+  const [overviewState, setOverviewState] = useState<OverviewState>({
     status: "loading",
   });
 
@@ -263,9 +296,22 @@ export default function CustomersPage() {
     }
   };
 
+  const fetchOverview = async () => {
+    setOverviewState({ status: "loading" });
+    try {
+      const data = await window.api.customers.overview();
+      setOverviewState({ status: "ready", data });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to load overview";
+      setOverviewState({ status: "error", message });
+    }
+  };
+
   useEffect(() => {
     const controller = new AbortController();
     fetchData({ signal: controller.signal });
+    fetchOverview();
     return () => controller.abort();
   }, [pagination.pageIndex, pagination.pageSize, debouncedSearch, sorting]);
 
@@ -289,6 +335,84 @@ export default function CustomersPage() {
           Read-only view into Rumah Sehat customer records with search, sort,
           and paging.
         </p>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {overviewState.status === "loading" &&
+          Array.from({ length: 4 }).map((_, idx) => (
+            <div
+              key={idx}
+              className="h-24 rounded-xl border bg-card/60 p-4 shadow-sm"
+            >
+              <div className="h-4 w-24 animate-pulse rounded bg-muted" />
+              <div className="mt-3 h-6 w-16 animate-pulse rounded bg-muted" />
+            </div>
+          ))}
+
+        {overviewState.status === "error" && (
+          <div className="md:col-span-2 xl:col-span-4 rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+            {overviewState.message}
+            <div className="mt-2">
+              <Button variant="ghost" size="sm" onClick={fetchOverview}>
+                Retry
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {overviewState.status === "ready" && (
+          <>
+            <StatCard
+              label="Total customers"
+              value={overviewState.data.total}
+              helper={`${overviewState.data.active} active / ${overviewState.data.inactive} inactive`}
+            />
+            <StatCard
+              label="RS members"
+              value={overviewState.data.rsMember}
+              helper={`${overviewState.data.receiveDrDiscount} receive doctor discount`}
+            />
+            <StatCard
+              label="Buying in last 30d"
+              value={overviewState.data.withInvoices30d}
+              helper="Unique customers with invoices"
+            />
+            <StatCard
+              label="Last invoice"
+              value={
+                overviewState.data.lastInvoiceDate
+                  ? formatDate(overviewState.data.lastInvoiceDate)
+                  : "No invoices"
+              }
+              helper="Most recent invoice date"
+            />
+            <div className="md:col-span-2 xl:col-span-2 rounded-xl border bg-card/60 p-4 shadow-sm">
+              <div className="text-sm font-semibold text-muted-foreground">
+                Top regions
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {overviewState.data.topRegions.length === 0 && (
+                  <div className="text-sm text-muted-foreground">
+                    No region data.
+                  </div>
+                )}
+                {overviewState.data.topRegions.map((region) => (
+                  <div
+                    key={region.regionName}
+                    className="inline-flex items-center gap-2 rounded-full border border-border/80 bg-background px-3 py-1 text-sm"
+                  >
+                    <span className="font-semibold text-foreground">
+                      {region.regionName}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {region.count}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="rounded-xl border bg-card p-5 shadow-sm">
@@ -328,7 +452,10 @@ export default function CustomersPage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => fetchData()}
+              onClick={() => {
+                fetchData();
+                fetchOverview();
+              }}
               className="ml-auto border border-border/60 bg-background/60 text-foreground"
               disabled={isLoading}
             >

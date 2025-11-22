@@ -3,6 +3,8 @@ import type {
   Customer,
   CustomersListRequest,
   CustomersSortKey,
+  CustomersOverview,
+  RegionCount,
 } from "../shared/types";
 
 let pool: Pool | null = null;
@@ -186,5 +188,72 @@ export async function closePool() {
   if (pool) {
     await pool.end();
     pool = null;
+  }
+}
+
+export async function getCustomersOverview(): Promise<CustomersOverview> {
+  const pool = await getPool();
+  const client = await pool.connect();
+
+  const summaryQuery = `
+    SELECT
+      (SELECT COUNT(*) FROM "Customers")::int AS total,
+      (SELECT COUNT(*) FROM "Customers" WHERE "isActive" = true)::int AS active,
+      (SELECT COUNT(*) FROM "Customers" WHERE "isActive" = false)::int AS inactive,
+      (SELECT COUNT(*) FROM "Customers" WHERE "rsMember" = true)::int AS "rsMember",
+      (SELECT COUNT(*) FROM "Customers" WHERE "receiveDrDiscount" = true)::int AS "receiveDrDiscount",
+      (
+        SELECT COUNT(DISTINCT i."CustomerId")
+        FROM "Invoices" i
+        WHERE i."CustomerId" IS NOT NULL
+          AND i.date >= (CURRENT_DATE - INTERVAL '30 days')
+      )::int AS "withInvoices30d",
+      (
+        SELECT MAX(i.date)
+        FROM "Invoices" i
+        WHERE i."CustomerId" IS NOT NULL
+      ) AS "lastInvoiceDate"
+  `;
+
+  const topRegionsQuery = `
+    SELECT
+      COALESCE(r."name", 'Unspecified') AS "regionName",
+      COUNT(*)::int AS count
+    FROM "Customers" c
+    LEFT JOIN "Regions" r ON c."RegionId" = r.id
+    GROUP BY r."name"
+    ORDER BY count DESC, "regionName" ASC
+    LIMIT 5
+  `;
+
+  try {
+    const [summaryResult, topRegionsResult] = await Promise.all([
+      client.query(summaryQuery),
+      client.query(topRegionsQuery),
+    ]);
+
+    const summaryRow = summaryResult.rows[0] ?? {};
+    const overview: CustomersOverview = {
+      total: Number(summaryRow.total ?? 0),
+      active: Number(summaryRow.active ?? 0),
+      inactive: Number(summaryRow.inactive ?? 0),
+      rsMember: Number(summaryRow.rsMember ?? 0),
+      receiveDrDiscount: Number(summaryRow.receiveDrDiscount ?? 0),
+      withInvoices30d: Number(summaryRow.withInvoices30d ?? 0),
+      lastInvoiceDate:
+        summaryRow.lastInvoiceDate instanceof Date
+          ? summaryRow.lastInvoiceDate.toISOString()
+          : summaryRow.lastInvoiceDate ?? null,
+      topRegions: topRegionsResult.rows.map(
+        (row): RegionCount => ({
+          regionName: row.regionName ?? "Unspecified",
+          count: Number(row.count ?? 0),
+        })
+      ),
+    };
+
+    return overview;
+  } finally {
+    client.release();
   }
 }

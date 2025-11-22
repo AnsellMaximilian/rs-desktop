@@ -12,6 +12,7 @@ export type AppAPI = {
   };
   customers: {
     list: (input: CustomersListRequest) => Promise<CustomersListResponse>;
+    overview: () => Promise<CustomersOverview>;
   };
 };
 
@@ -59,4 +60,20 @@ export type CustomersListResponse = {
   total: number;
   limit: number;
   offset: number;
+};
+
+export type RegionCount = {
+  regionName: string;
+  count: number;
+};
+
+export type CustomersOverview = {
+  total: number;
+  active: number;
+  inactive: number;
+  rsMember: number;
+  receiveDrDiscount: number;
+  withInvoices30d: number;
+  lastInvoiceDate: string | null;
+  topRegions: RegionCount[];
 };
