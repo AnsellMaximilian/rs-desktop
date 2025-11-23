@@ -688,13 +688,15 @@ export async function getProductDetail(id: number): Promise<ProductDetail> {
         WHERE pd."ProductId" = $1
       ) AS "purchasedQty",
       (
-        SELECT MAX(dd."createdAt")
+        SELECT MAX(COALESCE(d.date, dd."createdAt"))
         FROM "DeliveryDetails" dd
+        LEFT JOIN "Deliveries" d ON dd."DeliveryId" = d.id
         WHERE dd."ProductId" = $1
       ) AS "lastSaleDate",
       (
-        SELECT MAX(pd."createdAt")
+        SELECT MAX(COALESCE(pu.date, pd."createdAt"))
         FROM "PurchaseDetails" pd
+        LEFT JOIN "Purchases" pu ON pd."PurchaseId" = pu.id
         WHERE pd."ProductId" = $1
       ) AS "lastPurchaseDate"
   `;
@@ -703,15 +705,23 @@ export async function getProductDetail(id: number): Promise<ProductDetail> {
     WITH months AS (
       SELECT date_trunc('month', CURRENT_DATE) - (INTERVAL '1 month' * g) AS month_start
       FROM generate_series(0, 5) AS g
+    ),
+    deliveries AS (
+      SELECT
+        dd.qty,
+        dd.price,
+        date_trunc('month', COALESCE(d.date, dd."createdAt")) AS month_start
+      FROM "DeliveryDetails" dd
+      LEFT JOIN "Deliveries" d ON dd."DeliveryId" = d.id
+      WHERE dd."ProductId" = $1
     )
     SELECT
-      to_char(month_start, 'Mon YYYY') AS label,
+      to_char(m.month_start, 'Mon YYYY') AS label,
       COALESCE(SUM(dd.qty), 0)::numeric AS qty,
       COALESCE(SUM(dd.price * dd.qty), 0)::numeric AS amount
     FROM months m
-    LEFT JOIN "DeliveryDetails" dd
-      ON dd."ProductId" = $1
-      AND date_trunc('month', dd."createdAt") = m.month_start
+    LEFT JOIN deliveries dd
+      ON dd.month_start = m.month_start
     GROUP BY m.month_start
     ORDER BY m.month_start ASC
   `;
@@ -720,15 +730,23 @@ export async function getProductDetail(id: number): Promise<ProductDetail> {
     WITH months AS (
       SELECT date_trunc('month', CURRENT_DATE) - (INTERVAL '1 month' * g) AS month_start
       FROM generate_series(0, 5) AS g
+    ),
+    purchases AS (
+      SELECT
+        pd.qty,
+        pd.price,
+        date_trunc('month', COALESCE(pu.date, pd."createdAt")) AS month_start
+      FROM "PurchaseDetails" pd
+      LEFT JOIN "Purchases" pu ON pd."PurchaseId" = pu.id
+      WHERE pd."ProductId" = $1
     )
     SELECT
-      to_char(month_start, 'Mon YYYY') AS label,
+      to_char(m.month_start, 'Mon YYYY') AS label,
       COALESCE(SUM(pd.qty), 0)::numeric AS qty,
       COALESCE(SUM(pd.price * pd.qty), 0)::numeric AS amount
     FROM months m
-    LEFT JOIN "PurchaseDetails" pd
-      ON pd."ProductId" = $1
-      AND date_trunc('month', pd."createdAt") = m.month_start
+    LEFT JOIN purchases pd
+      ON pd.month_start = m.month_start
     GROUP BY m.month_start
     ORDER BY m.month_start ASC
   `;
@@ -736,7 +754,7 @@ export async function getProductDetail(id: number): Promise<ProductDetail> {
   const stockMovementsQuery = `
     (
       SELECT
-        dd."createdAt" AS date,
+        COALESCE(d.date, dd."createdAt") AS date,
         'delivery'::text AS kind,
         -dd.qty::numeric AS qty,
         d.note AS description,
@@ -748,7 +766,7 @@ export async function getProductDetail(id: number): Promise<ProductDetail> {
     UNION ALL
     (
       SELECT
-        pd."createdAt" AS date,
+        COALESCE(pu.date, pd."createdAt") AS date,
         'purchase'::text AS kind,
         pd.qty::numeric AS qty,
         pu.note AS description,
