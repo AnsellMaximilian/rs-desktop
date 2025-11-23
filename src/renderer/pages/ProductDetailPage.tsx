@@ -210,11 +210,19 @@ export default function ProductDetailPage() {
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <DetailRow
                 label="Keep stock since"
-                value={formatDate(state.data.product.keepStockSince)}
+                value={
+                  state.data.product.keepStockSince
+                    ? formatDate(state.data.product.keepStockSince)
+                    : "Not tracked"
+                }
               />
               <DetailRow
                 label="Restock number"
-                value={state.data.product.restockNumber ?? "—"}
+                value={
+                  state.data.product.keepStockSince
+                    ? state.data.product.restockNumber ?? "—"
+                    : "Not tracked"
+                }
               />
               <DetailRow
                 label="Price"
@@ -267,11 +275,15 @@ export default function ProductDetailPage() {
             <StatCard
               icon={<BarChart3 className="h-4 w-4" />}
               label="Current stock"
-              value={state.data.totals.currentStock.toLocaleString()}
+              value={
+                state.data.product.keepStockSince
+                  ? state.data.totals.currentStock.toLocaleString()
+                  : "Not tracked"
+              }
               helper={
                 state.data.product.keepStockSince
                   ? `Since ${formatDate(state.data.product.keepStockSince)}`
-                  : "All time"
+                  : "Stock tracking disabled"
               }
             />
             <StatCard
