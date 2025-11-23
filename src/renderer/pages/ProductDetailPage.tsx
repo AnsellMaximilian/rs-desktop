@@ -27,8 +27,6 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart";
 import {
-  Area,
-  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -293,7 +291,7 @@ export default function ProductDetailPage() {
             />
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-3">
+          <div className="grid gap-4 xl:grid-cols-4">
             <div className="rounded-xl border bg-card/60 p-5 shadow-sm space-y-4">
               <div className="text-sm font-semibold text-muted-foreground">
                 Sales trend (last 6 months)
@@ -303,9 +301,16 @@ export default function ProductDetailPage() {
 
             <div className="rounded-xl border bg-card/60 p-5 shadow-sm space-y-4">
               <div className="text-sm font-semibold text-muted-foreground">
-                Purchases (last 6 months)
+                Qty trend (weekly, last 6 months)
               </div>
-              <PurchaseChart data={state.data.purchaseTrend} />
+              <QtyChart data={state.data.qtyTrend} />
+            </div>
+
+            <div className="rounded-xl border bg-card/60 p-5 shadow-sm space-y-4">
+              <div className="text-sm font-semibold text-muted-foreground">
+                Revenue vs overall cost (last 6 months)
+              </div>
+              <RevenueCostChart data={state.data.salesTrend} />
             </div>
 
             <div className="rounded-xl border bg-card/60 p-5 shadow-sm space-y-4">
@@ -401,16 +406,15 @@ function TopList({ items }: { items: TopItem[] }) {
 function SalesChart({
   data,
 }: {
-  data: { label: string; qty: number; amount: number }[];
+  data: { label: string; revenue: number; overallCost: number }[];
 }) {
   const chartConfig = {
-    amount: { label: "Revenue", color: "var(--chart-1)" },
-    qty: { label: "Units", color: "var(--chart-2)" },
+    revenue: { label: "Revenue (Rp)", color: "var(--chart-1)" },
   } as const;
 
   return (
     <ChartContainer className="aspect-auto h-64 w-full" config={chartConfig}>
-      <AreaChart data={data} margin={{ left: -12, right: 12, bottom: 8 }}>
+      <LineChart data={data} margin={{ left: -12, right: 12, bottom: 8 }}>
         <CartesianGrid strokeDasharray="3 3" />
         <XAxis
           dataKey="label"
@@ -431,7 +435,7 @@ function SalesChart({
                 <>
                   <span className="text-muted-foreground">{name}</span>
                   <span className="font-mono font-medium tabular-nums text-foreground">
-                    {name === "amount" ? formatCurrency(value) : value.toLocaleString()}
+                    {formatCurrency(value)}
                   </span>
                 </>
               )}
@@ -439,13 +443,63 @@ function SalesChart({
           }
         />
         <ChartLegend content={<ChartLegendContent />} />
-        <Area
-          dataKey="amount"
-          stroke="var(--color-amount)"
-          fill="var(--color-amount)"
-          fillOpacity={0.15}
+        <Line
+          dataKey="revenue"
+          stroke="var(--color-revenue)"
+          strokeWidth={2.2}
+          dot={{ r: 3 }}
+          activeDot={{ r: 5 }}
           type="monotone"
         />
+      </LineChart>
+    </ChartContainer>
+  );
+}
+
+function QtyChart({
+  data,
+}: {
+  data: { label: string; qty: number; month: string }[];
+}) {
+  const chartConfig = {
+    qty: { label: "Qty", color: "var(--chart-3)" },
+  } as const;
+
+  return (
+    <ChartContainer className="aspect-auto h-64 w-full" config={chartConfig}>
+      <LineChart data={data} margin={{ left: -12, right: 12, bottom: 8 }}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis
+          dataKey="label"
+          axisLine={false}
+          tickLine={false}
+          tickMargin={8}
+        />
+        <YAxis
+          allowDecimals={false}
+          axisLine={false}
+          tickLine={false}
+          tickMargin={6}
+        />
+        <ChartTooltip
+          content={
+            <ChartTooltipContent
+              labelFormatter={(value, payload) => {
+                const month = payload?.[0]?.payload?.month;
+                return month ? `${value} · ${month}` : value;
+              }}
+              formatter={(value: number, name) => (
+                <>
+                  <span className="text-muted-foreground">{name}</span>
+                  <span className="font-mono font-medium tabular-nums text-foreground">
+                    {value.toLocaleString()}
+                  </span>
+                </>
+              )}
+            />
+          }
+        />
+        <ChartLegend content={<ChartLegendContent />} />
         <Line
           dataKey="qty"
           stroke="var(--color-qty)"
@@ -454,19 +508,19 @@ function SalesChart({
           activeDot={{ r: 5 }}
           type="monotone"
         />
-      </AreaChart>
+      </LineChart>
     </ChartContainer>
   );
 }
 
-function PurchaseChart({
+function RevenueCostChart({
   data,
 }: {
-  data: { label: string; qty: number; amount: number }[];
+  data: { label: string; revenue: number; overallCost: number }[];
 }) {
   const chartConfig = {
-    qty: { label: "Units", color: "var(--chart-4)" },
-    amount: { label: "Spend", color: "var(--chart-5)" },
+    revenue: { label: "Revenue (Rp)", color: "var(--chart-5)" },
+    overallCost: { label: "Overall cost (Rp)", color: "var(--chart-2)" },
   } as const;
 
   return (
@@ -492,7 +546,7 @@ function PurchaseChart({
                 <>
                   <span className="text-muted-foreground">{name}</span>
                   <span className="font-mono font-medium tabular-nums text-foreground">
-                    {name === "amount" ? formatCurrency(value) : value.toLocaleString()}
+                    {formatCurrency(value)}
                   </span>
                 </>
               )}
@@ -501,14 +555,14 @@ function PurchaseChart({
         />
         <ChartLegend content={<ChartLegendContent />} />
         <Bar
-          dataKey="qty"
-          fill="var(--color-qty)"
+          dataKey="revenue"
+          fill="var(--color-revenue)"
           radius={[6, 6, 0, 0]}
           maxBarSize={22}
         />
         <Bar
-          dataKey="amount"
-          fill="var(--color-amount)"
+          dataKey="overallCost"
+          fill="var(--color-overallCost)"
           radius={[6, 6, 0, 0]}
           maxBarSize={22}
         />

@@ -13,6 +13,7 @@ import type {
   TrendPoint,
   ProductDetail,
   ProductTrendPoint,
+  ProductQtyTrendPoint,
   StockMovement,
 } from "../shared/types";
 
@@ -678,7 +679,7 @@ export async function getProductDetail(id: number): Promise<ProductDetail> {
         WHERE dd."ProductId" = $1
       ) AS revenue,
       (
-        SELECT COALESCE(SUM(dd.cost * dd.qty), 0)::numeric
+        SELECT COALESCE(SUM(COALESCE(dd."overallCost", dd.cost * dd.qty)), 0)::numeric
         FROM "DeliveryDetails" dd
         WHERE dd."ProductId" = $1
       ) AS cogs,
@@ -710,6 +711,7 @@ export async function getProductDetail(id: number): Promise<ProductDetail> {
       SELECT
         dd.qty,
         dd.price,
+        COALESCE(dd."overallCost", dd.cost * dd.qty) AS "overallCost",
         date_trunc('month', COALESCE(d.date, dd."createdAt")) AS month_start
       FROM "DeliveryDetails" dd
       LEFT JOIN "Deliveries" d ON dd."DeliveryId" = d.id
@@ -717,13 +719,38 @@ export async function getProductDetail(id: number): Promise<ProductDetail> {
     )
     SELECT
       to_char(m.month_start, 'Mon YYYY') AS label,
-      COALESCE(SUM(dd.qty), 0)::numeric AS qty,
-      COALESCE(SUM(dd.price * dd.qty), 0)::numeric AS amount
+      COALESCE(SUM(dd.price * dd.qty), 0)::numeric AS revenue,
+      COALESCE(SUM(dd."overallCost"), 0)::numeric AS "overallCost"
     FROM months m
     LEFT JOIN deliveries dd
       ON dd.month_start = m.month_start
     GROUP BY m.month_start
     ORDER BY m.month_start ASC
+  `;
+
+  const qtyTrendQuery = `
+    WITH weeks AS (
+      SELECT date_trunc('week', CURRENT_DATE) - (INTERVAL '1 week' * g) AS week_start
+      FROM generate_series(0, 25) AS g
+    ),
+    deliveries AS (
+      SELECT
+        dd.qty,
+        to_char(COALESCE(d.date, dd."createdAt"), 'Mon YYYY') AS month,
+        date_trunc('week', COALESCE(d.date, dd."createdAt")) AS week_start
+      FROM "DeliveryDetails" dd
+      LEFT JOIN "Deliveries" d ON dd."DeliveryId" = d.id
+      WHERE dd."ProductId" = $1
+    )
+    SELECT
+      to_char(w.week_start, '"Wk" IW') AS label,
+      to_char(w.week_start, 'Mon YYYY') AS month,
+      COALESCE(SUM(dd.qty), 0)::numeric AS qty
+    FROM weeks w
+    LEFT JOIN deliveries dd
+      ON dd.week_start = w.week_start
+    GROUP BY w.week_start
+    ORDER BY w.week_start ASC
   `;
 
   const purchaseTrendQuery = `
@@ -733,17 +760,18 @@ export async function getProductDetail(id: number): Promise<ProductDetail> {
     ),
     purchases AS (
       SELECT
-        pd.qty,
-        pd.price,
-        date_trunc('month', COALESCE(pu.date, pd."createdAt")) AS month_start
-      FROM "PurchaseDetails" pd
-      LEFT JOIN "Purchases" pu ON pd."PurchaseId" = pu.id
-      WHERE pd."ProductId" = $1
+        dd.qty,
+        dd.price,
+        COALESCE(dd."overallCost", dd.cost * dd.qty) AS "overallCost",
+        date_trunc('month', COALESCE(d.date, dd."createdAt")) AS month_start
+      FROM "DeliveryDetails" dd
+      LEFT JOIN "Deliveries" d ON dd."DeliveryId" = d.id
+      WHERE dd."ProductId" = $1
     )
     SELECT
       to_char(m.month_start, 'Mon YYYY') AS label,
-      COALESCE(SUM(pd.qty), 0)::numeric AS qty,
-      COALESCE(SUM(pd.price * pd.qty), 0)::numeric AS amount
+      COALESCE(SUM(pd.price * pd.qty), 0)::numeric AS revenue,
+      COALESCE(SUM(pd."overallCost"), 0)::numeric AS "overallCost"
     FROM months m
     LEFT JOIN purchases pd
       ON pd.month_start = m.month_start
@@ -907,10 +935,11 @@ export async function getProductDetail(id: number): Promise<ProductDetail> {
         ? product.keepStockSince
         : null;
 
-    const [summaryResult, salesTrendResult, purchaseTrendResult, stockMovesResult, topCustomersResult, stockBalanceResult, latestMatchResult] =
+    const [summaryResult, salesTrendResult, qtyTrendResult, purchaseTrendResult, stockMovesResult, topCustomersResult, stockBalanceResult, latestMatchResult] =
       await Promise.all([
         client.query(summaryQuery, [id]),
         client.query(salesTrendQuery, [id]),
+        client.query(qtyTrendQuery, [id]),
         client.query(purchaseTrendQuery, [id]),
         client.query(stockMovementsQuery, [id]),
         client.query(topCustomersQuery, [id]),
@@ -923,16 +952,24 @@ export async function getProductDetail(id: number): Promise<ProductDetail> {
     const salesTrend: ProductTrendPoint[] = salesTrendResult.rows.map(
       (row) => ({
         label: row.label ?? "",
-        qty: Number(row.qty ?? 0),
-        amount: Number(row.amount ?? 0),
+        revenue: Number(row.revenue ?? 0),
+        overallCost: Number(row.overallCost ?? 0),
       })
     );
 
     const purchaseTrend: ProductTrendPoint[] = purchaseTrendResult.rows.map(
       (row) => ({
         label: row.label ?? "",
+        revenue: Number(row.revenue ?? 0),
+        overallCost: Number(row.overallCost ?? 0),
+      })
+    );
+
+    const qtyTrend: ProductQtyTrendPoint[] = qtyTrendResult.rows.map(
+      (row) => ({
+        label: row.label ?? "",
         qty: Number(row.qty ?? 0),
-        amount: Number(row.amount ?? 0),
+        month: row.month ?? "",
       })
     );
 
@@ -984,6 +1021,7 @@ export async function getProductDetail(id: number): Promise<ProductDetail> {
       salesTrend,
       purchaseTrend,
       stockMovements,
+      qtyTrend,
       topCustomers,
       latestStockMatch,
     };

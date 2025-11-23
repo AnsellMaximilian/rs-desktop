@@ -188,8 +188,14 @@ export type ProductsOverview = {
 
 export type ProductTrendPoint = {
   label: string;
+  revenue: number;
+  overallCost: number;
+};
+
+export type ProductQtyTrendPoint = {
+  label: string;
   qty: number;
-  amount: number;
+  month: string;
 };
 
 export type StockMovement = {
@@ -214,6 +220,7 @@ export type ProductDetail = {
   };
   salesTrend: ProductTrendPoint[];
   purchaseTrend: ProductTrendPoint[];
+  qtyTrend: ProductQtyTrendPoint[];
   stockMovements: StockMovement[];
   topCustomers: TopItem[];
   latestStockMatch: {
