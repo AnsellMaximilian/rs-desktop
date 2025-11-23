@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -8,7 +8,7 @@ import {
   Phone,
   RefreshCw,
 } from "lucide-react";
-import type { CustomerDetail } from "../../shared/types";
+import type { CustomerDetail, TopItem } from "../../shared/types";
 import { Button } from "@/components/ui/button";
 import {
   ChartContainer,
@@ -18,21 +18,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Line,
-  LineChart as ReLineChart,
-  Pie,
-  PieChart,
-  PolarAngleAxis,
-  RadialBar,
-  RadialBarChart,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart as ReLineChart, Pie, PieChart, XAxis, YAxis } from "recharts";
 
 type DetailState =
   | { status: "loading" }
@@ -74,33 +60,6 @@ export default function CustomerDetailPage() {
   const navigate = useNavigate();
   const numericId = Number(id);
   const [state, setState] = useState<DetailState>({ status: "loading" });
-  const activityData = useMemo(() => {
-    if (state.status !== "ready") return [];
-    const base = state.data.invoiceTrend.map((item) => ({
-      label: item.label,
-      invoices: item.count,
-      deliveries: 0,
-    }));
-    const labelIndex = new Map(
-      state.data.invoiceTrend.map((item, idx) => [item.label, idx])
-    );
-
-    state.data.deliveryTrend.forEach((item) => {
-      const idx = labelIndex.get(item.label);
-      if (idx !== undefined) {
-        base[idx].deliveries = item.count;
-      } else {
-        base.push({
-          label: item.label,
-          invoices: 0,
-          deliveries: item.count,
-        });
-      }
-    });
-
-    return base;
-  }, [state]);
-
   const load = async () => {
     if (!Number.isInteger(numericId)) {
       setState({ status: "error", message: "Invalid customer id" });
@@ -278,13 +237,6 @@ export default function CustomerDetailPage() {
           <div className="grid gap-4 xl:grid-cols-3">
             <div className="rounded-xl border bg-card/60 p-5 shadow-sm space-y-4">
               <div className="text-sm font-semibold text-muted-foreground">
-                Activity (last 6 months)
-              </div>
-              <ActivityChart data={activityData} />
-            </div>
-
-            <div className="rounded-xl border bg-card/60 p-5 shadow-sm space-y-4">
-              <div className="text-sm font-semibold text-muted-foreground">
                 Spend (last 6 months)
               </div>
               <SpendChart data={state.data.spendTrend} />
@@ -311,6 +263,13 @@ export default function CustomerDetailPage() {
               </div>
               <OrderValueChart data={state.data.orderValueBuckets} />
             </div>
+
+            <div className="rounded-xl border bg-card/60 p-5 shadow-sm space-y-4">
+              <div className="text-sm font-semibold text-muted-foreground">
+                Supplier breakdown
+              </div>
+              <TopList items={state.data.supplierBreakdown} unit="Rp" />
+            </div>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
@@ -322,12 +281,18 @@ export default function CustomerDetailPage() {
             </div>
             <div className="rounded-xl border bg-card/60 p-5 shadow-sm space-y-4">
               <div className="text-sm font-semibold text-muted-foreground">
-                Activity split
+                Top products (qty)
               </div>
-              <ActivitySplitChart
-                invoices={state.data.invoiceCount}
-                deliveries={state.data.deliveryCount}
-              />
+              <TopList items={state.data.topProductsByQty} />
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-xl border bg-card/60 p-5 shadow-sm space-y-4">
+              <div className="text-sm font-semibold text-muted-foreground">
+                Top products (orders)
+              </div>
+              <TopList items={state.data.topProductsByOrders} />
             </div>
           </div>
         </div>
@@ -582,60 +547,36 @@ function CategoryDonutChart({
   );
 }
 
-function ActivitySplitChart({
-  invoices,
-  deliveries,
+function TopList({
+  items,
+  unit,
 }: {
-  invoices: number;
-  deliveries: number;
+  items: TopItem[];
+  unit?: "Rp";
 }) {
-  const data = [
-    { name: "Invoices", value: invoices, fill: "var(--chart-1)" },
-    { name: "Deliveries", value: deliveries, fill: "var(--chart-2)" },
-  ];
-
-  const chartConfig = {
-    Invoices: { label: "Invoices" },
-    Deliveries: { label: "Deliveries" },
-  } as const;
+  if (!items.length) {
+    return (
+      <div className="rounded-lg border bg-background px-4 py-6 text-sm text-muted-foreground">
+        No data yet.
+      </div>
+    );
+  }
 
   return (
-    <ChartContainer
-      className="aspect-auto h-64 w-full"
-      config={chartConfig}
-    >
-      <RadialBarChart
-        data={data}
-        innerRadius="30%"
-        outerRadius="80%"
-        startAngle={90}
-        endAngle={-270}
-      >
-        <PolarAngleAxis type="number" domain={[0, Math.max(invoices, deliveries, 1)]} tick={false} />
-        <RadialBar
-          dataKey="value"
-          background
-          cornerRadius={8}
-          stackId="activity"
-        />
-        <ChartTooltip
-          content={
-            <ChartTooltipContent
-              hideIndicator
-              labelFormatter={(value) => value}
-              formatter={(value: number, name) => (
-                <>
-                  <span className="text-muted-foreground">{name}</span>
-                  <span className="font-mono font-medium tabular-nums text-foreground">
-                    {value.toLocaleString()}
-                  </span>
-                </>
-              )}
-            />
-          }
-        />
-        <ChartLegend content={<ChartLegendContent nameKey="name" />} />
-      </RadialBarChart>
-    </ChartContainer>
+    <div className="space-y-2">
+      {items.map((item) => (
+        <div
+          key={item.label}
+          className="flex items-center justify-between rounded-md border border-border/60 bg-background px-3 py-2 text-sm"
+        >
+          <span className="text-foreground">{item.label}</span>
+          <span className="font-mono tabular-nums text-muted-foreground">
+            {unit === "Rp"
+              ? `Rp ${item.value.toLocaleString()}`
+              : item.value.toLocaleString()}
+          </span>
+        </div>
+      ))}
+    </div>
   );
 }

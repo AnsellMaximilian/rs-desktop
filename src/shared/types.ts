@@ -96,11 +96,12 @@ export type CustomerDetail = {
   lastInvoiceDate: string | null;
   lastDeliveryDate: string | null;
   lastActivityDate: string | null;
-  invoiceTrend: TrendPoint[];
-  deliveryTrend: TrendPoint[];
   spendTrend: TrendAmountPoint[];
   categoryBreakdown: CategorySlice[];
   orderValueBuckets: BucketSlice[];
+  topProductsByQty: TopItem[];
+  topProductsByOrders: TopItem[];
+  supplierBreakdown: TopItem[];
   rfm: {
     recencyDays: number | null;
     frequency: number;

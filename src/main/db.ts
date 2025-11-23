@@ -10,7 +10,6 @@ import type {
   ProductsSortKey,
   ProductsOverview,
   TopItem,
-  TrendPoint,
   ProductDetail,
   ProductTrendPoint,
   ProductQtyTrendPoint,
@@ -314,34 +313,44 @@ export async function getCustomerDetail(id: number): Promise<CustomerDetail> {
     WHERE "CustomerId" = $1
   `;
 
-  const invoiceTrendQuery = `
-    WITH series AS (
-      SELECT date_trunc('month', CURRENT_DATE) - (interval '1 month' * generate_series(0, 5)) AS month
-    )
+  const topProductsQtyQuery = `
     SELECT
-      to_char(series.month, 'Mon YYYY') AS label,
-      COALESCE(COUNT(i.*), 0)::int AS count
-    FROM series
-    LEFT JOIN "Invoices" i
-      ON i."CustomerId" = $1
-      AND date_trunc('month', i.date) = series.month
-    GROUP BY series.month
-    ORDER BY series.month;
+      COALESCE(p."name", 'Unknown') AS label,
+      COALESCE(SUM(dd.qty), 0)::numeric AS value
+    FROM "Deliveries" d
+    JOIN "DeliveryDetails" dd ON dd."DeliveryId" = d.id
+    LEFT JOIN "Products" p ON dd."ProductId" = p.id
+    WHERE d."CustomerId" = $1
+    GROUP BY p.id
+    ORDER BY value DESC, label ASC
+    LIMIT 10
   `;
 
-  const deliveryTrendQuery = `
-    WITH series AS (
-      SELECT date_trunc('month', CURRENT_DATE) - (interval '1 month' * generate_series(0, 5)) AS month
-    )
+  const topProductsOrdersQuery = `
     SELECT
-      to_char(series.month, 'Mon YYYY') AS label,
-      COALESCE(COUNT(d.*), 0)::int AS count
-    FROM series
-    LEFT JOIN "Deliveries" d
-      ON d."CustomerId" = $1
-      AND date_trunc('month', d.date) = series.month
-    GROUP BY series.month
-    ORDER BY series.month;
+      COALESCE(p."name", 'Unknown') AS label,
+      COUNT(*)::int AS value
+    FROM "Deliveries" d
+    JOIN "DeliveryDetails" dd ON dd."DeliveryId" = d.id
+    LEFT JOIN "Products" p ON dd."ProductId" = p.id
+    WHERE d."CustomerId" = $1
+    GROUP BY p.id
+    ORDER BY value DESC, label ASC
+    LIMIT 10
+  `;
+
+  const supplierBreakdownQuery = `
+    SELECT
+      COALESCE(s."name", 'Unspecified') AS label,
+      COALESCE(SUM(dd.price * dd.qty), 0)::numeric AS value
+    FROM "Deliveries" d
+    JOIN "DeliveryDetails" dd ON dd."DeliveryId" = d.id
+    LEFT JOIN "Products" p ON dd."ProductId" = p.id
+    LEFT JOIN "Suppliers" s ON p."SupplierId" = s.id
+    WHERE d."CustomerId" = $1
+    GROUP BY s.id
+    ORDER BY value DESC, label ASC
+    LIMIT 10
   `;
 
   const spendTrendQuery = `
@@ -413,20 +422,22 @@ export async function getCustomerDetail(id: number): Promise<CustomerDetail> {
       customerResult,
       invoiceResult,
       deliveryResult,
-      invoiceTrendResult,
-      deliveryTrendResult,
       spendTrendResult,
       categoryBreakdownResult,
       orderBucketsResult,
+      topProductsQtyResult,
+      topProductsOrdersResult,
+      supplierBreakdownResult,
     ] = await Promise.all([
       client.query(customerQuery, [id]),
       client.query(invoiceQuery, [id]),
       client.query(deliveryQuery, [id]),
-      client.query(invoiceTrendQuery, [id]),
-      client.query(deliveryTrendQuery, [id]),
       client.query(spendTrendQuery, [id]),
       client.query(categoryBreakdownQuery, [id]),
       client.query(orderBucketsQuery, [id]),
+      client.query(topProductsQtyQuery, [id]),
+      client.query(topProductsOrdersQuery, [id]),
+      client.query(supplierBreakdownQuery, [id]),
     ]);
 
     if (customerResult.rows.length === 0) {
@@ -473,14 +484,6 @@ export async function getCustomerDetail(id: number): Promise<CustomerDetail> {
         return max === null ? ts : Math.max(max, ts);
       }, null);
 
-    const invoiceTrend: TrendPoint[] = invoiceTrendResult.rows.map((row) => ({
-      label: row.label,
-      count: Number(row.count ?? 0),
-    }));
-    const deliveryTrend: TrendPoint[] = deliveryTrendResult.rows.map((row) => ({
-      label: row.label,
-      count: Number(row.count ?? 0),
-    }));
     const spendTrend: TrendAmountPoint[] = spendTrendResult.rows.map((row) => ({
       label: row.label,
       amount: Number(row.amount ?? 0),
@@ -495,6 +498,22 @@ export async function getCustomerDetail(id: number): Promise<CustomerDetail> {
       (row) => ({
         label: row.label,
         count: Number(row.count ?? 0),
+      })
+    );
+    const topProductsByQty: TopItem[] = topProductsQtyResult.rows.map((row) => ({
+      label: row.label ?? "Unknown",
+      value: Number(row.value ?? 0),
+    }));
+    const topProductsByOrders: TopItem[] = topProductsOrdersResult.rows.map(
+      (row) => ({
+        label: row.label ?? "Unknown",
+        value: Number(row.value ?? 0),
+      })
+    );
+    const supplierBreakdown: TopItem[] = supplierBreakdownResult.rows.map(
+      (row) => ({
+        label: row.label ?? "Unspecified",
+        value: Number(row.value ?? 0),
       })
     );
 
@@ -512,11 +531,12 @@ export async function getCustomerDetail(id: number): Promise<CustomerDetail> {
       lastInvoiceDate,
       lastDeliveryDate,
       lastActivityDate: lastActivityDate ? new Date(lastActivityDate).toISOString() : null,
-      invoiceTrend,
-      deliveryTrend,
       spendTrend,
       categoryBreakdown,
       orderValueBuckets,
+      topProductsByQty,
+      topProductsByOrders,
+      supplierBreakdown,
       rfm: {
         recencyDays,
         frequency: Number(del.count ?? 0),
