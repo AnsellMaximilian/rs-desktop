@@ -1,5 +1,6 @@
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { Home, Package, Truck, Users } from "lucide-react";
+import { Home, Moon, Package, Sun, Truck, Users } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -60,6 +61,25 @@ function SidebarNav() {
 }
 
 export default function MainLayout() {
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    if (typeof window === "undefined") return "light";
+    const stored = localStorage.getItem("theme");
+    if (stored === "dark" || stored === "light") return stored;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
+  });
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === "dark") {
+      root.classList.add("dark");
+    } else {
+      root.classList.remove("dark");
+    }
+    localStorage.setItem("theme", theme);
+  }, [theme]);
+
   return (
     <SidebarProvider>
       <div className="flex min-h-screen max-h-screen overflow-hidden bg-background text-foreground">
@@ -80,6 +100,22 @@ export default function MainLayout() {
             <SidebarTrigger />
             <div className="text-sm font-semibold tracking-wide">
               Inventory
+            </div>
+            <div className="ml-auto">
+              <button
+                type="button"
+                aria-label="Toggle theme"
+                onClick={() =>
+                  setTheme((prev) => (prev === "dark" ? "light" : "dark"))
+                }
+                className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border/60 bg-background/80 text-foreground shadow-sm transition hover:bg-accent"
+              >
+                {theme === "dark" ? (
+                  <Sun className="h-4 w-4" />
+                ) : (
+                  <Moon className="h-4 w-4" />
+                )}
+              </button>
             </div>
           </header>
           <main className="flex-1 overflow-auto px-6 py-6">
