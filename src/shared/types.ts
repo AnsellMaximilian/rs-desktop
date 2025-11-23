@@ -20,6 +20,11 @@ export type AppAPI = {
     overview: () => Promise<ProductsOverview>;
     detail: (id: number) => Promise<ProductDetail>;
   };
+  suppliers: {
+    list: (input: SuppliersListRequest) => Promise<SuppliersListResponse>;
+    detail: (id: number) => Promise<SupplierDetail>;
+    overview: () => Promise<SuppliersOverview>;
+  };
 };
 
 export type DatabasePingResult = {
@@ -196,6 +201,63 @@ export type ProductQtyTrendPoint = {
   label: string;
   qty: number;
   month: string;
+};
+
+export type Supplier = {
+  id: number;
+  name: string;
+  accountNumber: string | null;
+  accountName: string | null;
+  productCount: number;
+  soldQty: number;
+  revenue: number;
+};
+
+export type SuppliersSortKey = "name" | "productCount" | "soldQty" | "revenue";
+
+export type SuppliersListRequest = {
+  search?: string;
+  limit?: number;
+  offset?: number;
+  sortBy?: SuppliersSortKey;
+  sortDir?: "asc" | "desc";
+};
+
+export type SuppliersListResponse = {
+  data: Supplier[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type SupplierTrendPoint = {
+  label: string;
+  qty: number;
+};
+
+export type SupplierTopProductPoint = {
+  label: string;
+  qty: number;
+  productId: number;
+  productName: string;
+};
+
+export type SupplierDetail = {
+  supplier: {
+    id: number;
+    name: string;
+    accountNumber: string | null;
+    accountName: string | null;
+    productCount: number;
+  };
+  totals: {
+    soldQty: number;
+    revenue: number;
+    lastSaleDate: string | null;
+  };
+  qtyTrend: SupplierTrendPoint[];
+  topProductTrends: SupplierTopProductPoint[];
+  topProducts: TopItem[];
 };
 
 export type StockMovement = {

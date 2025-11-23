@@ -3,6 +3,7 @@ import { CHANNELS } from "../../shared/channels";
 import { pingDatabase } from "../db";
 import { registerCustomerHandlers } from "./customers";
 import { registerProductHandlers } from "./products";
+import { registerSupplierHandlers } from "./suppliers";
 
 const initHandlers = () => {
   ipcMain.handle(CHANNELS.FILES.PICK_FOLDER, async () => {
@@ -21,6 +22,7 @@ const initHandlers = () => {
 
   registerCustomerHandlers();
   registerProductHandlers();
+  registerSupplierHandlers();
 };
 
 export default initHandlers;

@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { Home, Package, Users } from "lucide-react";
+import { Home, Package, Truck, Users } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -20,6 +20,7 @@ const navItems = [
   { label: "Home", icon: Home, to: "/home" },
   { label: "Customers", icon: Users, to: "/customers" },
   { label: "Products", icon: Package, to: "/products" },
+  { label: "Suppliers", icon: Truck, to: "/suppliers" },
 ];
 
 function SidebarNav() {

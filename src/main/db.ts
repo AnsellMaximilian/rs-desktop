@@ -14,6 +14,14 @@ import type {
   ProductDetail,
   ProductTrendPoint,
   ProductQtyTrendPoint,
+  Supplier,
+  SuppliersListRequest,
+  SuppliersSortKey,
+  SuppliersListResponse,
+  SuppliersOverview,
+  SupplierDetail,
+  SupplierTrendPoint,
+  SupplierTopProductPoint,
   StockMovement,
 } from "../shared/types";
 
@@ -1148,6 +1156,310 @@ export async function getProductsOverview(): Promise<ProductsOverview> {
     };
 
     return overview;
+  } finally {
+    client.release();
+  }
+}
+
+export async function listSuppliers(
+  input: SuppliersListRequest = {}
+): Promise<SuppliersListResponse> {
+  const pool = await getPool();
+  const client = await pool.connect();
+
+  const limit = Math.max(
+    1,
+    Math.min(input.limit ?? DEFAULT_LIMIT, MAX_LIMIT)
+  );
+  const offset = Math.max(input.offset ?? 0, 0);
+  const search = input.search?.trim();
+  const sortBy: SuppliersSortKey = input.sortBy ?? "name";
+  const sortDir = input.sortDir === "desc" ? "desc" : "asc";
+
+  const SORT_MAP: Record<SuppliersSortKey, string> = {
+    name: `s."name"`,
+    productCount: `"productCount"`,
+    soldQty: `"soldQty"`,
+    revenue: `"revenue"`,
+  };
+
+  const whereParts: string[] = [];
+  const params: unknown[] = [];
+
+  if (search) {
+    params.push(`%${search}%`);
+    const idx = `$${params.length}`;
+    whereParts.push(`(s."name" ILIKE ${idx})`);
+  }
+
+  const whereClause = whereParts.length ? `WHERE ${whereParts.join(" AND ")}` : "";
+  const orderClause = `ORDER BY ${SORT_MAP[sortBy] ?? SORT_MAP.name} ${sortDir}, s.id ASC`;
+
+  const query = `
+    SELECT
+      s.id,
+      s."name",
+      s."accountNumber",
+      s."accountName",
+      COUNT(DISTINCT p.id)::int AS "productCount",
+      COALESCE(SUM(dd.qty), 0)::numeric AS "soldQty",
+      COALESCE(SUM(dd.price * dd.qty), 0)::numeric AS revenue
+    FROM "Suppliers" s
+    LEFT JOIN "Products" p ON p."SupplierId" = s.id
+    LEFT JOIN "DeliveryDetails" dd ON dd."ProductId" = p.id
+    ${whereClause}
+    GROUP BY s.id
+    ${orderClause}
+    LIMIT $${params.length + 1}
+    OFFSET $${params.length + 2}
+  `;
+
+  const countQuery = `
+    SELECT COUNT(*)::int AS count
+    FROM "Suppliers" s
+    ${whereClause}
+  `;
+
+  try {
+    const [dataResult, countResult] = await Promise.all([
+      client.query(query, [...params, limit, offset]),
+      client.query(countQuery, params),
+    ]);
+    const data: Supplier[] = dataResult.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      accountNumber: row.accountNumber ?? null,
+      accountName: row.accountName ?? null,
+      productCount: Number(row.productCount ?? 0),
+      soldQty: Number(row.soldQty ?? 0),
+      revenue: Number(row.revenue ?? 0),
+    }));
+
+    const total = Number(countResult.rows[0]?.count ?? 0);
+
+    return { data, total, limit, offset };
+  } finally {
+    client.release();
+  }
+}
+
+export async function getSuppliersOverview(): Promise<SuppliersOverview> {
+  const pool = await getPool();
+  const client = await pool.connect();
+
+  const query = `
+    SELECT
+      (SELECT COUNT(*) FROM "Suppliers")::int AS total,
+      (SELECT COUNT(*) FROM "Products" WHERE "SupplierId" IS NOT NULL)::int AS products,
+      (
+        SELECT COALESCE(SUM(dd.qty), 0)
+        FROM "DeliveryDetails" dd
+        JOIN "Products" p ON dd."ProductId" = p.id
+        WHERE p."SupplierId" IS NOT NULL
+      )::numeric AS "soldQty",
+      (
+        SELECT COALESCE(SUM(dd.price * dd.qty), 0)
+        FROM "DeliveryDetails" dd
+        JOIN "Products" p ON dd."ProductId" = p.id
+        WHERE p."SupplierId" IS NOT NULL
+      )::numeric AS revenue,
+      (
+        SELECT MAX(COALESCE(d.date, dd."createdAt"))
+        FROM "DeliveryDetails" dd
+        JOIN "Products" p ON dd."ProductId" = p.id
+        LEFT JOIN "Deliveries" d ON dd."DeliveryId" = d.id
+        WHERE p."SupplierId" IS NOT NULL
+      ) AS "lastSaleDate"
+  `;
+
+  try {
+    const result = await client.query(query);
+    const row = result.rows[0] ?? {};
+    return {
+      total: Number(row.total ?? 0),
+      products: Number(row.products ?? 0),
+      soldQty: Number(row.soldQty ?? 0),
+      revenue: Number(row.revenue ?? 0),
+      lastSaleDate:
+        row.lastSaleDate instanceof Date
+          ? row.lastSaleDate.toISOString()
+          : row.lastSaleDate ?? null,
+    };
+  } finally {
+    client.release();
+  }
+}
+
+export async function getSupplierDetail(id: number): Promise<SupplierDetail> {
+  const pool = await getPool();
+  const client = await pool.connect();
+
+  const supplierQuery = `
+    SELECT
+      s.id,
+      s."name",
+      s."accountNumber",
+      s."accountName",
+      COUNT(DISTINCT p.id)::int AS "productCount"
+    FROM "Suppliers" s
+    LEFT JOIN "Products" p ON p."SupplierId" = s.id
+    WHERE s.id = $1
+    GROUP BY s.id
+  `;
+
+  const summaryQuery = `
+    SELECT
+      COALESCE(SUM(dd.qty), 0)::numeric AS "soldQty",
+      COALESCE(SUM(dd.price * dd.qty), 0)::numeric AS revenue,
+      MAX(COALESCE(d.date, dd."createdAt")) AS "lastSaleDate"
+    FROM "DeliveryDetails" dd
+    LEFT JOIN "Products" p ON dd."ProductId" = p.id
+    LEFT JOIN "Deliveries" d ON dd."DeliveryId" = d.id
+    WHERE p."SupplierId" = $1
+  `;
+
+  const qtyTrendQuery = `
+    WITH weeks AS (
+      SELECT date_trunc('week', CURRENT_DATE) - (INTERVAL '1 week' * g) AS week_start
+      FROM generate_series(0, 25) AS g
+    ),
+    deliveries AS (
+      SELECT
+        dd.qty,
+        date_trunc('week', COALESCE(d.date, dd."createdAt")) AS week_start
+      FROM "DeliveryDetails" dd
+      LEFT JOIN "Products" p ON dd."ProductId" = p.id
+      LEFT JOIN "Deliveries" d ON dd."DeliveryId" = d.id
+      WHERE p."SupplierId" = $1
+    )
+    SELECT
+      to_char(w.week_start, '"Wk" IW') AS label,
+      COALESCE(SUM(dd.qty), 0)::numeric AS qty
+    FROM weeks w
+    LEFT JOIN deliveries dd
+      ON dd.week_start = w.week_start
+    GROUP BY w.week_start
+    ORDER BY w.week_start ASC
+  `;
+
+  const topProductTrendQuery = `
+    WITH weeks AS (
+      SELECT date_trunc('week', CURRENT_DATE) - (INTERVAL '1 week' * g) AS week_start
+      FROM generate_series(0, 25) AS g
+    ),
+    ranked_products AS (
+      SELECT
+        p.id,
+        p."name",
+        COALESCE(SUM(dd.qty), 0)::numeric AS qty,
+        ROW_NUMBER() OVER (ORDER BY COALESCE(SUM(dd.qty), 0) DESC, p."name" ASC) AS rn
+      FROM "Products" p
+      LEFT JOIN "DeliveryDetails" dd ON dd."ProductId" = p.id
+      WHERE p."SupplierId" = $1
+      GROUP BY p.id
+    ),
+    top_products AS (
+      SELECT id, "name"
+      FROM ranked_products
+      WHERE rn <= 10
+    ),
+    deliveries AS (
+      SELECT
+        dd.qty,
+        p.id AS "productId",
+        p."name" AS "productName",
+        date_trunc('week', COALESCE(d.date, dd."createdAt")) AS week_start
+      FROM "DeliveryDetails" dd
+      JOIN top_products p ON dd."ProductId" = p.id
+      LEFT JOIN "Deliveries" d ON dd."DeliveryId" = d.id
+    )
+    SELECT
+      to_char(w.week_start, '"Wk" IW') AS label,
+      COALESCE(SUM(dd.qty), 0)::numeric AS qty,
+      dd."productId",
+      dd."productName"
+    FROM weeks w
+    LEFT JOIN deliveries dd
+      ON dd.week_start = w.week_start
+    GROUP BY w.week_start, dd."productId", dd."productName"
+    ORDER BY w.week_start ASC, dd."productName" ASC
+  `;
+
+  const topProductsQuery = `
+    SELECT
+      p."name" AS label,
+      COALESCE(SUM(dd.qty), 0)::numeric AS value
+    FROM "Products" p
+    LEFT JOIN "DeliveryDetails" dd ON dd."ProductId" = p.id
+    WHERE p."SupplierId" = $1
+    GROUP BY p.id
+    ORDER BY value DESC, label ASC
+    LIMIT 10
+  `;
+
+  try {
+    const [
+      supplierResult,
+      summaryResult,
+      qtyTrendResult,
+      topProductTrendResult,
+      topProductsResult,
+    ] = await Promise.all([
+      client.query(supplierQuery, [id]),
+      client.query(summaryQuery, [id]),
+      client.query(qtyTrendQuery, [id]),
+      client.query(topProductTrendQuery, [id]),
+      client.query(topProductsQuery, [id]),
+    ]);
+
+    const supplierRow = supplierResult.rows[0];
+    if (!supplierRow) {
+      throw new Error("Supplier not found");
+    }
+
+    const toDateString = (value: unknown) =>
+      value instanceof Date ? value.toISOString() : value?.toString?.() ?? null;
+
+    const supplier = {
+      id: supplierRow.id,
+      name: supplierRow.name,
+      accountNumber: supplierRow.accountNumber ?? null,
+      accountName: supplierRow.accountName ?? null,
+      productCount: Number(supplierRow.productCount ?? 0),
+    };
+
+    const summaryRow = summaryResult.rows[0] ?? {};
+    const totals = {
+      soldQty: Number(summaryRow.soldQty ?? 0),
+      revenue: Number(summaryRow.revenue ?? 0),
+      lastSaleDate: toDateString(summaryRow.lastSaleDate),
+    };
+
+    const qtyTrend: SupplierTrendPoint[] = qtyTrendResult.rows.map((row) => ({
+      label: row.label ?? "",
+      qty: Number(row.qty ?? 0),
+    }));
+
+    const topProductTrends: SupplierTopProductPoint[] =
+      topProductTrendResult.rows.map((row) => ({
+        label: row.label ?? "",
+        qty: Number(row.qty ?? 0),
+        productId: row.productid ?? row.productId ?? 0,
+        productName: row.productname ?? row.productName ?? "",
+      }));
+
+    const topProducts: TopItem[] = topProductsResult.rows.map((row) => ({
+      label: row.label ?? "",
+      value: Number(row.value ?? 0),
+    }));
+
+    return {
+      supplier,
+      totals,
+      qtyTrend,
+      topProductTrends,
+      topProducts,
+    };
   } finally {
     client.release();
   }

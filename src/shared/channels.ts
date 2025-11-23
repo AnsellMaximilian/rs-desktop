@@ -23,6 +23,7 @@ export const CHANNELS = {
   DATABASE: makeChannels("database", ["PING"] as const),
   CUSTOMERS: makeChannels("customers", ["LIST", "OVERVIEW", "DETAIL"] as const),
   PRODUCTS: makeChannels("products", ["LIST", "OVERVIEW", "DETAIL"] as const),
+  SUPPLIERS: makeChannels("suppliers", ["LIST", "DETAIL", "OVERVIEW"] as const),
 } as const;
 
 // Types
@@ -31,4 +32,5 @@ export type Channel =
   | (typeof CHANNELS.AUTH)[keyof typeof CHANNELS.AUTH]
   | (typeof CHANNELS.DATABASE)[keyof typeof CHANNELS.DATABASE]
   | (typeof CHANNELS.CUSTOMERS)[keyof typeof CHANNELS.CUSTOMERS]
-  | (typeof CHANNELS.PRODUCTS)[keyof typeof CHANNELS.PRODUCTS];
+  | (typeof CHANNELS.PRODUCTS)[keyof typeof CHANNELS.PRODUCTS]
+  | (typeof CHANNELS.SUPPLIERS)[keyof typeof CHANNELS.SUPPLIERS];

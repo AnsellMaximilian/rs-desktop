@@ -27,6 +27,11 @@ const api: AppAPI = {
     overview: () => ipcRenderer.invoke(CHANNELS.PRODUCTS.OVERVIEW),
     detail: (id) => ipcRenderer.invoke(CHANNELS.PRODUCTS.DETAIL, id),
   },
+  suppliers: {
+    list: (input) => ipcRenderer.invoke(CHANNELS.SUPPLIERS.LIST, input),
+    detail: (id) => ipcRenderer.invoke(CHANNELS.SUPPLIERS.DETAIL, id),
+    overview: () => ipcRenderer.invoke(CHANNELS.SUPPLIERS.OVERVIEW),
+  },
 };
 
 contextBridge.exposeInMainWorld("api", api);
