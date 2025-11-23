@@ -1,6 +1,6 @@
 import { ipcMain } from "electron";
 import { CHANNELS } from "../../shared/channels";
-import { getProductsOverview, listProducts } from "../db";
+import { getProductDetail, getProductsOverview, listProducts } from "../db";
 
 export function registerProductHandlers() {
   ipcMain.handle(CHANNELS.PRODUCTS.LIST, async (_, payload) => {
@@ -9,5 +9,9 @@ export function registerProductHandlers() {
 
   ipcMain.handle(CHANNELS.PRODUCTS.OVERVIEW, async () => {
     return getProductsOverview();
+  });
+
+  ipcMain.handle(CHANNELS.PRODUCTS.DETAIL, async (_, id: number) => {
+    return getProductDetail(id);
   });
 }

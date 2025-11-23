@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import type { SortingState } from "@tanstack/react-table";
 import {
   ColumnDef,
@@ -187,9 +188,12 @@ export default function ProductsPage() {
           const product = row.original;
           return (
             <div className="flex flex-col gap-0.5">
-              <div className="font-semibold text-foreground">
+              <Link
+                to={`/products/${product.id}`}
+                className="font-semibold text-foreground underline-offset-4 hover:underline"
+              >
                 {product.name}
-              </div>
+              </Link>
               <div className="text-xs text-muted-foreground">
                 {product.unit}
               </div>

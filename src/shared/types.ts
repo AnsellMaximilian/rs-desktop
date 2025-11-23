@@ -18,6 +18,7 @@ export type AppAPI = {
   products: {
     list: (input: ProductsListRequest) => Promise<ProductsListResponse>;
     overview: () => Promise<ProductsOverview>;
+    detail: (id: number) => Promise<ProductDetail>;
   };
 };
 
@@ -183,4 +184,41 @@ export type ProductsOverview = {
   topCategories: TopItem[];
   topSuppliers: TopItem[];
   topSellers30d: TopItem[];
+};
+
+export type ProductTrendPoint = {
+  label: string;
+  qty: number;
+  amount: number;
+};
+
+export type StockMovement = {
+  date: string;
+  kind: "purchase" | "delivery" | "adjustment" | "match";
+  qty: number;
+  description: string | null;
+  ref: string | null;
+};
+
+export type ProductDetail = {
+  product: Product;
+  totals: {
+    soldQty: number;
+    purchasedQty: number;
+    revenue: number;
+    cogs: number;
+    margin: number;
+    lastSaleDate: string | null;
+    lastPurchaseDate: string | null;
+    currentStock: number;
+  };
+  salesTrend: ProductTrendPoint[];
+  purchaseTrend: ProductTrendPoint[];
+  stockMovements: StockMovement[];
+  topCustomers: TopItem[];
+  latestStockMatch: {
+    date: string | null;
+    qty: number | null;
+    description: string | null;
+  } | null;
 };

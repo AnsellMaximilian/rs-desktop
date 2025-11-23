@@ -11,6 +11,9 @@ import type {
   ProductsOverview,
   TopItem,
   TrendPoint,
+  ProductDetail,
+  ProductTrendPoint,
+  StockMovement,
 } from "../shared/types";
 
 let pool: Pool | null = null;
@@ -630,6 +633,342 @@ export async function listProducts(
     const total = Number(countResult.rows[0]?.count ?? 0);
 
     return { data, total, limit, offset };
+  } finally {
+    client.release();
+  }
+}
+
+export async function getProductDetail(id: number): Promise<ProductDetail> {
+  const pool = await getPool();
+  const client = await pool.connect();
+
+  const productQuery = `
+    SELECT
+      p.id,
+      p."name",
+      p.price,
+      p."resellerPrice",
+      p.cost,
+      p.unit,
+      p."ProductCategoryId" as "categoryId",
+      pc."name" as "categoryName",
+      p."SupplierId" as "supplierId",
+      s."name" as "supplierName",
+      p."keepStockSince",
+      p."restockNumber",
+      p."isActive",
+      p."createdAt",
+      p."updatedAt"
+    FROM "Products" p
+    LEFT JOIN "ProductCategories" pc ON p."ProductCategoryId" = pc.id
+    LEFT JOIN "Suppliers" s ON p."SupplierId" = s.id
+    WHERE p.id = $1
+  `;
+
+  const summaryQuery = `
+    SELECT
+      (
+        SELECT COALESCE(SUM(dd.qty), 0)::numeric
+        FROM "DeliveryDetails" dd
+        WHERE dd."ProductId" = $1
+      ) AS "soldQty",
+      (
+        SELECT COALESCE(SUM(dd.price * dd.qty), 0)::numeric
+        FROM "DeliveryDetails" dd
+        WHERE dd."ProductId" = $1
+      ) AS revenue,
+      (
+        SELECT COALESCE(SUM(dd.cost * dd.qty), 0)::numeric
+        FROM "DeliveryDetails" dd
+        WHERE dd."ProductId" = $1
+      ) AS cogs,
+      (
+        SELECT COALESCE(SUM(pd.qty), 0)::numeric
+        FROM "PurchaseDetails" pd
+        WHERE pd."ProductId" = $1
+      ) AS "purchasedQty",
+      (
+        SELECT MAX(dd."createdAt")
+        FROM "DeliveryDetails" dd
+        WHERE dd."ProductId" = $1
+      ) AS "lastSaleDate",
+      (
+        SELECT MAX(pd."createdAt")
+        FROM "PurchaseDetails" pd
+        WHERE pd."ProductId" = $1
+      ) AS "lastPurchaseDate"
+  `;
+
+  const salesTrendQuery = `
+    WITH months AS (
+      SELECT date_trunc('month', CURRENT_DATE) - (INTERVAL '1 month' * g) AS month_start
+      FROM generate_series(0, 5) AS g
+    )
+    SELECT
+      to_char(month_start, 'Mon YYYY') AS label,
+      COALESCE(SUM(dd.qty), 0)::numeric AS qty,
+      COALESCE(SUM(dd.price * dd.qty), 0)::numeric AS amount
+    FROM months m
+    LEFT JOIN "DeliveryDetails" dd
+      ON dd."ProductId" = $1
+      AND date_trunc('month', dd."createdAt") = m.month_start
+    GROUP BY m.month_start
+    ORDER BY m.month_start ASC
+  `;
+
+  const purchaseTrendQuery = `
+    WITH months AS (
+      SELECT date_trunc('month', CURRENT_DATE) - (INTERVAL '1 month' * g) AS month_start
+      FROM generate_series(0, 5) AS g
+    )
+    SELECT
+      to_char(month_start, 'Mon YYYY') AS label,
+      COALESCE(SUM(pd.qty), 0)::numeric AS qty,
+      COALESCE(SUM(pd.price * pd.qty), 0)::numeric AS amount
+    FROM months m
+    LEFT JOIN "PurchaseDetails" pd
+      ON pd."ProductId" = $1
+      AND date_trunc('month', pd."createdAt") = m.month_start
+    GROUP BY m.month_start
+    ORDER BY m.month_start ASC
+  `;
+
+  const stockMovementsQuery = `
+    (
+      SELECT
+        dd."createdAt" AS date,
+        'delivery'::text AS kind,
+        -dd.qty::numeric AS qty,
+        d.note AS description,
+        CONCAT('Delivery #', d.id) AS ref
+      FROM "DeliveryDetails" dd
+      LEFT JOIN "Deliveries" d ON dd."DeliveryId" = d.id
+      WHERE dd."ProductId" = $1
+    )
+    UNION ALL
+    (
+      SELECT
+        pd."createdAt" AS date,
+        'purchase'::text AS kind,
+        pd.qty::numeric AS qty,
+        pu.note AS description,
+        CONCAT('Purchase #', pu.id) AS ref
+      FROM "PurchaseDetails" pd
+      LEFT JOIN "Purchases" pu ON pd."PurchaseId" = pu.id
+      WHERE pd."ProductId" = $1
+    )
+    UNION ALL
+    (
+      SELECT
+        sa.date::timestamp AS date,
+        'adjustment'::text AS kind,
+        sa.amount::numeric AS qty,
+        sa.description AS description,
+        NULL AS ref
+      FROM "StockAdjustments" sa
+      WHERE sa."ProductId" = $1
+    )
+    UNION ALL
+    (
+      SELECT
+        sm.date,
+        'match'::text AS kind,
+        sm.qty::numeric AS qty,
+        sm.description AS description,
+        NULL AS ref
+      FROM "StockMatches" sm
+      WHERE sm."ProductId" = $1
+    )
+    UNION ALL
+    (
+      SELECT
+        dr.date::timestamp AS date,
+        'draw'::text AS kind,
+        -dr.amount::numeric AS qty,
+        dr.description AS description,
+        NULL AS ref
+      FROM "Draws" dr
+      WHERE dr."ProductId" = $1
+    )
+    ORDER BY date DESC
+    LIMIT 20
+  `;
+
+  const stockBalanceQuery = `
+    SELECT
+      COALESCE((
+        SELECT SUM(pd.qty)
+        FROM "PurchaseDetails" pd
+        LEFT JOIN "Purchases" pu ON pd."PurchaseId" = pu.id
+        WHERE pd."ProductId" = $1
+          AND ($2::date IS NULL OR pu.date >= $2::date)
+      ), 0)::numeric AS purchases,
+      COALESCE((
+        SELECT SUM(dd.qty)
+        FROM "DeliveryDetails" dd
+        LEFT JOIN "Deliveries" d ON dd."DeliveryId" = d.id
+        WHERE dd."ProductId" = $1
+          AND ($2::date IS NULL OR d.date >= $2::date)
+      ), 0)::numeric AS deliveries,
+      COALESCE((
+        SELECT SUM(sa.amount)
+        FROM "StockAdjustments" sa
+        WHERE sa."ProductId" = $1
+          AND ($2::date IS NULL OR sa.date >= $2::date)
+      ), 0)::numeric AS adjustments,
+      COALESCE((
+        SELECT SUM(dr.amount)
+        FROM "Draws" dr
+        WHERE dr."ProductId" = $1
+          AND ($2::date IS NULL OR dr.date >= $2::date)
+      ), 0)::numeric AS draws
+  `;
+
+  const latestStockMatchQuery = `
+    SELECT
+      sm.date,
+      sm.qty,
+      sm.description
+    FROM "StockMatches" sm
+    WHERE sm."ProductId" = $1
+    ORDER BY sm.date DESC
+    LIMIT 1
+  `;
+
+  const topCustomersQuery = `
+    SELECT
+      COALESCE(c."fullName", 'Unknown') AS label,
+      COALESCE(SUM(dd.qty), 0)::numeric AS value
+    FROM "DeliveryDetails" dd
+    JOIN "Deliveries" d ON dd."DeliveryId" = d.id
+    LEFT JOIN "Customers" c ON d."CustomerId" = c.id
+    WHERE dd."ProductId" = $1
+    GROUP BY c."fullName"
+    ORDER BY value DESC, label ASC
+    LIMIT 5
+  `;
+
+  try {
+    const productResult = await client.query(productQuery, [id]);
+    const productRow = productResult.rows[0];
+    if (!productRow) {
+      throw new Error("Product not found");
+    }
+
+    const toDateString = (value: unknown) =>
+      value instanceof Date
+        ? value.toISOString()
+        : value?.toString?.() ?? null;
+
+    const product: Product = {
+      id: productRow.id,
+      name: productRow.name,
+      price: Number(productRow.price ?? 0),
+      resellerPrice:
+        productRow.resellerPrice !== null
+          ? Number(productRow.resellerPrice)
+          : null,
+      cost: Number(productRow.cost ?? 0),
+      unit: productRow.unit ?? "",
+      categoryId: productRow.categoryId ?? null,
+      categoryName: productRow.categoryName ?? null,
+      supplierId: productRow.supplierId ?? null,
+      supplierName: productRow.supplierName ?? null,
+      keepStockSince: toDateString(productRow.keepStockSince),
+      restockNumber:
+        productRow.restockNumber !== null
+          ? Number(productRow.restockNumber)
+          : null,
+      isActive: productRow.isActive ?? null,
+      createdAt: toDateString(productRow.createdAt) ?? "",
+      updatedAt: toDateString(productRow.updatedAt) ?? "",
+    };
+
+    const sinceDate =
+      product.keepStockSince && typeof product.keepStockSince === "string"
+        ? product.keepStockSince
+        : null;
+
+    const [summaryResult, salesTrendResult, purchaseTrendResult, stockMovesResult, topCustomersResult, stockBalanceResult, latestMatchResult] =
+      await Promise.all([
+        client.query(summaryQuery, [id]),
+        client.query(salesTrendQuery, [id]),
+        client.query(purchaseTrendQuery, [id]),
+        client.query(stockMovementsQuery, [id]),
+        client.query(topCustomersQuery, [id]),
+        client.query(stockBalanceQuery, [id, sinceDate]),
+        client.query(latestStockMatchQuery, [id]),
+      ]);
+
+    const summaryRow = summaryResult.rows[0] ?? {};
+
+    const salesTrend: ProductTrendPoint[] = salesTrendResult.rows.map(
+      (row) => ({
+        label: row.label ?? "",
+        qty: Number(row.qty ?? 0),
+        amount: Number(row.amount ?? 0),
+      })
+    );
+
+    const purchaseTrend: ProductTrendPoint[] = purchaseTrendResult.rows.map(
+      (row) => ({
+        label: row.label ?? "",
+        qty: Number(row.qty ?? 0),
+        amount: Number(row.amount ?? 0),
+      })
+    );
+
+    const stockMovements: StockMovement[] = stockMovesResult.rows.map(
+      (row) => ({
+        date: toDateString(row.date) ?? "",
+        kind: row.kind,
+        qty: Number(row.qty ?? 0),
+        description: row.description ?? null,
+        ref: row.ref ?? null,
+      })
+    );
+
+    const topCustomers: TopItem[] = topCustomersResult.rows.map((row) => ({
+      label: row.label ?? "Unknown",
+      value: Number(row.value ?? 0),
+    }));
+
+    const balanceRow = stockBalanceResult.rows[0] ?? {};
+    const currentStock =
+      Number(balanceRow.purchases ?? 0) -
+      Number(balanceRow.deliveries ?? 0) +
+      Number(balanceRow.adjustments ?? 0) -
+      Number(balanceRow.draws ?? 0);
+
+    const latestMatchRow = latestMatchResult.rows[0] ?? null;
+    const latestStockMatch = latestMatchRow
+      ? {
+          date: toDateString(latestMatchRow.date),
+          qty: latestMatchRow.qty !== null ? Number(latestMatchRow.qty) : null,
+          description: latestMatchRow.description ?? null,
+        }
+      : null;
+
+    const totals = {
+      soldQty: Number(summaryRow.soldQty ?? 0),
+      purchasedQty: Number(summaryRow.purchasedQty ?? 0),
+      revenue: Number(summaryRow.revenue ?? 0),
+      cogs: Number(summaryRow.cogs ?? 0),
+      margin: Number(summaryRow.revenue ?? 0) - Number(summaryRow.cogs ?? 0),
+      lastSaleDate: toDateString(summaryRow.lastSaleDate),
+      lastPurchaseDate: toDateString(summaryRow.lastPurchaseDate),
+      currentStock,
+    };
+
+    return {
+      product,
+      totals,
+      salesTrend,
+      purchaseTrend,
+      stockMovements,
+      topCustomers,
+      latestStockMatch,
+    };
   } finally {
     client.release();
   }

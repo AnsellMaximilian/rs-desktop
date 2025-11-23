@@ -11,6 +11,7 @@ import HomePage from "./pages/HomePage";
 import CustomersPage from "./pages/CustomersPage";
 import CustomerDetailPage from "./pages/CustomerDetailPage";
 import ProductsPage from "./pages/ProductsPage";
+import ProductDetailPage from "./pages/ProductDetailPage";
 
 const router = createBrowserRouter([
   {
@@ -39,6 +40,10 @@ const router = createBrowserRouter([
       {
         path: "/products",
         element: <ProductsPage />,
+      },
+      {
+        path: "/products/:id",
+        element: <ProductDetailPage />,
       },
     ],
   },

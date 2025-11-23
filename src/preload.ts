@@ -25,6 +25,7 @@ const api: AppAPI = {
   products: {
     list: (input) => ipcRenderer.invoke(CHANNELS.PRODUCTS.LIST, input),
     overview: () => ipcRenderer.invoke(CHANNELS.PRODUCTS.OVERVIEW),
+    detail: (id) => ipcRenderer.invoke(CHANNELS.PRODUCTS.DETAIL, id),
   },
 };
 
